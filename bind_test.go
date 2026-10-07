@@ -3,6 +3,7 @@ package gonf_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/netip"
 	"reflect"
 	"strings"
@@ -67,7 +68,7 @@ func TestBind(t *testing.T) {
 		"db.skipped":   "nope",
 		"db.ignored":   "nope",
 	}, nil)
-	got, err := gonf.Bind[DB](cfg, "db")
+	got, err := gonf.Bind[DB](cfg, "db", gonf.AllowUnknown())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +328,6 @@ func TestBind_Maps(t *testing.T) {
 		"x.lists.a[1]":                "2",
 		"x.lists.b":                   "3,4",
 		"x.opt.o.host":                "o-host",
-		"x.unrelated":                 "ignored",
 		"xx.labels.other":             "ignored",
 	}, upperSource{"X_LABELS_TEAM": "env"})
 	got, err := gonf.Bind[maps](cfg, "x")
@@ -489,6 +489,177 @@ func TestBind_Errors(t *testing.T) {
 			}
 			if err.Error() != tt.expected {
 				t.Errorf("error\n%s\nwant\n%s", err, tt.expected)
+			}
+		})
+	}
+}
+
+// window validates itself; its pointer receiver must be found too.
+type window struct {
+	Min int
+	Max int
+}
+
+func (w *window) Validate() error {
+	if w.Min > w.Max {
+		return fmt.Errorf("min %d is greater than max %d", w.Min, w.Max)
+	}
+	return nil
+}
+
+// limits validates itself with a value receiver.
+type limits struct {
+	Window  window
+	Windows []window
+	Named   map[string]window
+	Name    string
+}
+
+func (l limits) Validate() error {
+	if l.Name == "bad" {
+		return errors.New("bad name")
+	}
+	return nil
+}
+
+func TestBind_Validate(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name          string
+		prefix        string
+		values        map[string]string
+		expectedError string
+	}{
+		{
+			name:   "valid",
+			prefix: "x",
+			values: map[string]string{"x.window.min": "1", "x.window.max": "2", "x.name": "ok"},
+		},
+		{
+			name:   "nested, elements and parent",
+			prefix: "x",
+			values: map[string]string{
+				"x.window.min": "1", "x.window.max": "2", "x.name": "bad",
+				"x.windows[0].min": "3", "x.windows[0].max": "4",
+				"x.windows[1].min": "5", "x.windows[1].max": "4",
+				"x.named.a.min": "9", "x.named.a.max": "1",
+			},
+			expectedError: `gonf: bind "x": 2 problems:
+  x.windows[1]: min 5 is greater than max 4
+  x.named.a: min 9 is greater than max 1`,
+		},
+		{
+			name:          "parent after valid children",
+			prefix:        "x",
+			values:        map[string]string{"x.window.min": "1", "x.window.max": "2", "x.name": "bad"},
+			expectedError: `gonf: bind "x": x: bad name`,
+		},
+		{
+			name:          "not called after binding problems",
+			prefix:        "x",
+			values:        map[string]string{"x.window.min": "9", "x.name": "bad"},
+			expectedError: `gonf: bind "x": x.window.max: required, no value`,
+		},
+		{
+			name:          "root",
+			prefix:        "",
+			values:        map[string]string{"window.min": "1", "window.max": "2", "name": "bad"},
+			expectedError: `gonf: bind "": bad name`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := gonf.Bind[limits](load(t, tt.values, nil), tt.prefix)
+			if tt.expectedError == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || err.Error() != tt.expectedError {
+				t.Errorf("error\n%v\nwant\n%s", err, tt.expectedError)
+			}
+		})
+	}
+}
+
+func TestBind_Unknown(t *testing.T) {
+	t.Parallel()
+	type pool struct {
+		MaxSize int `default:"10"`
+	}
+	type db struct {
+		URL     string
+		Pool    pool
+		Hosts   []string
+		Labels  map[string]string
+		Skipped string `cfg:"-"`
+	}
+	tests := []struct {
+		name          string
+		prefix        string
+		values        map[string]string
+		env           upperSource
+		opts          []gonf.BindOption
+		expectedError string
+	}{
+		{
+			name:   "known keys",
+			prefix: "db",
+			values: map[string]string{
+				"db.url": "jdbc://${db.host}/${db.name:app}", "db.host": "h",
+				"db.hosts": "a", "db.hosts[0]": "ignored", "db.labels.a.b": "1",
+				"other.key": "outside the prefix", "dbx.key": "outside the prefix",
+			},
+			env: upperSource{"DB_URLL": "env names are not checked"},
+		},
+		{
+			name:   "typos with suggestion",
+			prefix: "db",
+			values: map[string]string{"db.url": "u", "db.pool.max-szie": "5", "db.ulr": "u"},
+			expectedError: `gonf: bind "db": 2 problems:
+  db.pool.max-szie: unknown key, did you mean db.pool.max-size? (from file:app.properties)
+  db.ulr: unknown key, did you mean db.url? (from file:app.properties)`,
+		},
+		{
+			name:   "no close key and skipped field",
+			prefix: "db",
+			values: map[string]string{"db.url": "u", "db.completely-different": "x", "db.skipped": "x"},
+			expectedError: `gonf: bind "db": 2 problems:
+  db.completely-different: unknown key (from file:app.properties)
+  db.skipped: unknown key (from file:app.properties)`,
+		},
+		{
+			name:          "reported after binding problems",
+			prefix:        "db",
+			values:        map[string]string{"db.urll": "u"},
+			expectedError: "gonf: bind \"db\": 2 problems:\n  db.url: required, no value\n  db.urll: unknown key, did you mean db.url? (from file:app.properties)",
+		},
+		{
+			name:   "allow unknown",
+			prefix: "db",
+			values: map[string]string{"db.url": "u", "db.extra": "x"},
+			opts:   []gonf.BindOption{gonf.AllowUnknown()},
+		},
+		{
+			name:   "empty prefix is not checked",
+			prefix: "",
+			values: map[string]string{"url": "u", "extra": "x"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := gonf.Bind[db](load(t, tt.values, tt.env), tt.prefix, tt.opts...)
+			if tt.expectedError == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || err.Error() != tt.expectedError {
+				t.Errorf("error\n%v\nwant\n%s", err, tt.expectedError)
 			}
 		})
 	}

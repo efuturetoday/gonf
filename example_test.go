@@ -112,7 +112,7 @@ func ExampleBindError() {
 		MaxSize int
 	}
 	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(
-		map[string]string{"db.max-size": "ten"},
+		map[string]string{"db.max-size": "ten", "db.ulr": "jdbc:postgresql://localhost/app"},
 		source.WithName("file:app.properties"),
 	)))
 	if err != nil {
@@ -121,7 +121,8 @@ func ExampleBindError() {
 	_, err = gonf.Bind[DB](cfg, "db")
 	fmt.Println(err)
 	// Output:
-	// gonf: bind "db": 2 problems:
+	// gonf: bind "db": 3 problems:
 	//   db.url: required, no value
 	//   db.max-size: invalid int "ten" (from file:app.properties)
+	//   db.ulr: unknown key, did you mean db.url? (from file:app.properties)
 }

@@ -35,7 +35,7 @@ func (c *Config) Get(key string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%w: %q", ErrNotFound, key)
 	}
-	s, err := c.expand(key, v.Raw)
+	s, err := c.expand(key, v.Raw, nil)
 	if err != nil {
 		return "", fmt.Errorf("gonf: key %q: %w", key, err)
 	}
@@ -43,9 +43,10 @@ func (c *Config) Get(key string) (string, error) {
 }
 
 // expand expands the expressions in s, which is the value of key or its
-// default. Its errors do not name key; callers add it.
-func (c *Config) expand(key, s string) (string, error) {
-	e := expander{c: c, chain: []string{key}}
+// default. Its errors do not name key; callers add it. If onReference is
+// not nil, it is called with every key that a ${...} expression resolved.
+func (c *Config) expand(key, s string, onReference func(key string)) (string, error) {
+	e := expander{c: c, chain: []string{key}, onReference: onReference}
 	return e.expand(s)
 }
 
@@ -55,7 +56,8 @@ type expander struct {
 	// chain holds the keys being expanded, outermost first.
 	chain []string
 	// references counts the resolved ${...} expressions.
-	references int
+	references  int
+	onReference func(key string)
 }
 
 func (e *expander) expand(s string) (string, error) {
@@ -115,6 +117,9 @@ func (e *expander) reference(body string) (string, error) {
 			return "", fmt.Errorf("unresolved reference %q", key)
 		}
 		return "", fmt.Errorf("unresolved reference %q (%s)", key, strings.Join(e.chain, " -> "))
+	}
+	if e.onReference != nil {
+		e.onReference(key)
 	}
 	e.chain = append(e.chain, key)
 	defer func() { e.chain = e.chain[:len(e.chain)-1] }()

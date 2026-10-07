@@ -5,6 +5,7 @@ import (
 	"encoding"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strconv"
@@ -47,20 +48,53 @@ import (
 // (see Keys); environment variables can override them but, except for
 // indexed elements, not add new ones.
 //
+// After its fields are bound without problems, a struct whose pointer
+// implements
+//
+//	Validate() error
+//
+// is validated; inner structs come first. A key under prefix that no field
+// binds, such as a typo "db.pool.max-szie", is an error naming the closest
+// known key; AllowUnknown turns this check off. A key that a bound value
+// references, such as db.host in db.url=jdbc:postgresql://${db.host}/app,
+// is known. It is skipped for an empty
+// prefix and for environment variable names such as DB_POOL_MAX_SIZ, which
+// cannot be told apart from variables for other programs.
+//
 // All problems are collected and returned together as a *BindError.
-func Bind[T any](c *Config, prefix string) (T, error) {
+func Bind[T any](c *Config, prefix string, opts ...BindOption) (T, error) {
 	var out T
 	v := reflect.ValueOf(&out).Elem()
 	if v.Kind() != reflect.Struct || isText(v.Type()) {
 		return out, fmt.Errorf("gonf: bind %q: %s is not a struct", prefix, v.Type())
 	}
-	b := binder{c: c}
+	var o bindOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	b := binder{c: c, known: map[string]struct{}{}, referenced: map[string]struct{}{}}
 	b.bindStruct(prefix, v)
+	if prefix != "" && !o.isUnknownAllowed {
+		b.checkUnknown(prefix)
+	}
 	if len(b.problems) > 0 {
 		var zero T
 		return zero, &BindError{Prefix: prefix, Problems: b.problems}
 	}
 	return out, nil
+}
+
+// BindOption configures Bind.
+type BindOption func(*bindOptions)
+
+type bindOptions struct {
+	isUnknownAllowed bool
+}
+
+// AllowUnknown turns off the check for unknown keys under the prefix, e.g.
+// when several structs bind parts of the same prefix.
+func AllowUnknown() BindOption {
+	return func(o *bindOptions) { o.isUnknownAllowed = true }
 }
 
 // BindError reports every key that Bind could not bind.
@@ -107,6 +141,9 @@ type Problem struct {
 
 // Error names the key, the problem and, if known, where the value came from.
 func (p *Problem) Error() string {
+	if p.Key == "" {
+		return p.Err.Error()
+	}
 	if errors.Is(p.Err, ErrNotFound) {
 		return p.Key + ": required, no value"
 	}
@@ -129,6 +166,22 @@ var (
 type binder struct {
 	c        *Config
 	problems []*Problem
+	// known holds the keys of the bound fields, open the prefixes of
+	// slices and maps, whose keys are all known.
+	known map[string]struct{}
+	open  []string
+	// referenced holds the keys that ${...} expressions resolved, such as
+	// db.host in db.url=jdbc:postgresql://${db.host}/app.
+	referenced map[string]struct{}
+}
+
+func (b *binder) reference(key string) {
+	b.referenced[key] = struct{}{}
+}
+
+// validator is implemented by structs that check themselves after Bind.
+type validator interface {
+	Validate() error
 }
 
 func (b *binder) fail(key string, origin Origin, err error) {
@@ -142,7 +195,7 @@ func (b *binder) value(key string) (string, Origin, bool, error) {
 	if !ok {
 		return "", Origin{}, false, nil
 	}
-	s, err := b.c.expand(key, v.Raw)
+	s, err := b.c.expand(key, v.Raw, b.reference)
 	if err != nil {
 		return "", v.Origin, false, err
 	}
@@ -151,6 +204,7 @@ func (b *binder) value(key string) (string, Origin, bool, error) {
 
 // bind binds key to v. def is the default tag, nil if there is none.
 func (b *binder) bind(key string, def *string, v reflect.Value) {
+	b.known[key] = struct{}{}
 	t := v.Type()
 	switch {
 	case isScalar(t):
@@ -170,7 +224,10 @@ func (b *binder) bind(key string, def *string, v reflect.Value) {
 	}
 }
 
+// bindStruct binds the fields of v, then validates v if they had no
+// problems.
 func (b *binder) bindStruct(prefix string, v reflect.Value) {
+	before := len(b.problems)
 	for _, f := range fields(v.Type()) {
 		key := join(prefix, f.name)
 		if f.isEmbeddedPointer {
@@ -178,6 +235,14 @@ func (b *binder) bindStruct(prefix string, v reflect.Value) {
 			continue
 		}
 		b.bind(key, f.def, v.FieldByIndex(f.index))
+	}
+	if len(b.problems) > before {
+		return
+	}
+	if val, ok := v.Addr().Interface().(validator); ok {
+		if err := val.Validate(); err != nil {
+			b.fail(prefix, Origin{}, err)
+		}
 	}
 }
 
@@ -197,7 +262,7 @@ func (b *binder) bindScalar(key string, def *string, v reflect.Value) {
 		b.fail(key, Origin{}, ErrNotFound)
 		return
 	}
-	s, err = b.c.expand(key, *def)
+	s, err = b.c.expand(key, *def, b.reference)
 	if err != nil {
 		b.fail(key, Origin{}, fmt.Errorf("default: %w", err))
 		return
@@ -222,6 +287,7 @@ func (b *binder) bindPointer(key string, def *string, v reflect.Value) {
 }
 
 func (b *binder) bindSlice(key string, def *string, v reflect.Value) {
+	b.open = append(b.open, key+"[")
 	s, origin, ok, err := b.value(key)
 	switch {
 	case err != nil:
@@ -242,7 +308,7 @@ func (b *binder) bindSlice(key string, def *string, v reflect.Value) {
 	if def == nil {
 		return
 	}
-	s, err = b.c.expand(key, *def)
+	s, err = b.c.expand(key, *def, b.reference)
 	if err != nil {
 		b.fail(key, Origin{}, fmt.Errorf("default: %w", err))
 		return
@@ -279,6 +345,7 @@ func (b *binder) bindMap(key string, v reflect.Value) {
 	}
 	isGroupValue := isGroup(t.Elem())
 	prefix := key + "."
+	b.open = append(b.open, prefix)
 	var names []string
 	for _, k := range b.c.keys {
 		rest, ok := strings.CutPrefix(k, prefix)
@@ -307,6 +374,69 @@ func (b *binder) bindMap(key string, v reflect.Value) {
 	if m.Len() > 0 {
 		v.Set(m)
 	}
+}
+
+// checkUnknown reports the keys under prefix that no field binds.
+func (b *binder) checkUnknown(prefix string) {
+	under := prefix + "."
+	for _, k := range b.c.keys {
+		if !strings.HasPrefix(k, under) || b.isKnown(k) {
+			continue
+		}
+		err := errors.New("unknown key")
+		if s := b.suggest(k); s != "" {
+			err = fmt.Errorf("unknown key, did you mean %s?", s)
+		}
+		v, _ := b.c.Lookup(k)
+		b.fail(k, v.Origin, err)
+	}
+}
+
+func (b *binder) isKnown(key string) bool {
+	if _, ok := b.known[key]; ok {
+		return true
+	}
+	if _, ok := b.referenced[key]; ok {
+		return true
+	}
+	return slices.ContainsFunc(b.open, func(p string) bool { return strings.HasPrefix(key, p) })
+}
+
+// maxSuggestDistance is the largest edit distance between an unknown key
+// and a known key suggested for it.
+const maxSuggestDistance = 3
+
+// suggest returns the known key closest to key, or "" if none is close.
+func (b *binder) suggest(key string) string {
+	best, bestDistance := "", maxSuggestDistance+1
+	for _, k := range slices.Sorted(maps.Keys(b.known)) {
+		if d := distance(key, k); d < bestDistance {
+			best, bestDistance = k, d
+		}
+	}
+	return best
+}
+
+// distance returns the Levenshtein distance between a and b.
+func distance(a, b string) int {
+	ra, rb := []rune(a), []rune(b)
+	prev := make([]int, len(rb)+1)
+	cur := make([]int, len(rb)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ra); i++ {
+		cur[0] = i
+		for j := 1; j <= len(rb); j++ {
+			cost := 1
+			if ra[i-1] == rb[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+		}
+		prev, cur = cur, prev
+	}
+	return prev[len(rb)]
 }
 
 // indices returns the indices of key[n] in ascending order: those found

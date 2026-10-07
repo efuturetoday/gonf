@@ -10,6 +10,14 @@ import (
 // ErrNotFound is returned by Get when the requested key has no value.
 var ErrNotFound = errors.New("gonf: key not found")
 
+// Limits of one Get call. They stop values such as a=${b}${b}, b=${c}${c},
+// ... from growing exponentially. A cycle is detected separately, and the
+// reference limit also bounds the depth.
+const (
+	maxReferences  = 1000
+	maxExpandedLen = 1 << 20 // bytes
+)
+
 // Get returns the value of key with all expressions expanded.
 //
 //	${key}          value of key, an error if it has none
@@ -19,7 +27,9 @@ var ErrNotFound = errors.New("gonf: key not found")
 // References are resolved like Lookup, so profiles and KeyMappers apply:
 // ${HOME} finds the environment variable. If key itself has no value, the
 // error matches ErrNotFound; a missing reference, a cycle or a malformed
-// expression is reported with the chain of keys involved.
+// expression is reported with the chain of keys involved. One Get resolves
+// at most 1000 references and builds at most 1 MiB; beyond that it returns
+// an error.
 func (c *Config) Get(key string) (string, error) {
 	v, ok := c.Lookup(key)
 	if !ok {
@@ -34,6 +44,8 @@ type expander struct {
 	c *Config
 	// chain holds the keys being expanded, outermost first.
 	chain []string
+	// references counts the resolved ${...} expressions.
+	references int
 }
 
 func (e *expander) expand(s string) (string, error) {
@@ -61,12 +73,19 @@ func (e *expander) expand(s string) (string, error) {
 			b.WriteByte(s[i])
 			i++
 		}
+		if b.Len() > maxExpandedLen {
+			return "", e.errorf("expansion too large: more than %d bytes", maxExpandedLen)
+		}
 	}
 	return b.String(), nil
 }
 
 // reference resolves the body of one ${...} expression.
 func (e *expander) reference(body string) (string, error) {
+	e.references++
+	if e.references > maxReferences {
+		return "", e.errorf("expansion too large: more than %d references", maxReferences)
+	}
 	key, def, hasDefault := strings.Cut(body, ":")
 	current := e.chain[len(e.chain)-1]
 	switch {

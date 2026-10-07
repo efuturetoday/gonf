@@ -3,6 +3,7 @@ package gonf_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -117,6 +118,48 @@ func TestConfig_Get_ResolvesLikeLookup(t *testing.T) {
 	}
 	if expected := "devhost:6543"; got != expected {
 		t.Errorf("Get = %q, want %q", got, expected)
+	}
+}
+
+func TestConfig_Get_Limits(t *testing.T) {
+	t.Parallel()
+	// laughs builds a=${l1}${l1}, l1=${l2}${l2}, ... with depth levels: 2^depth
+	// references, each adding the bytes of leaf.
+	laughs := func(depth int, leaf string) map[string]string {
+		values := map[string]string{"a": "${l1}${l1}"}
+		for i := 1; i < depth; i++ {
+			values[fmt.Sprintf("l%d", i)] = fmt.Sprintf("${l%d}${l%d}", i+1, i+1)
+		}
+		values[fmt.Sprintf("l%d", depth)] = leaf
+		return values
+	}
+	tests := []struct {
+		name          string
+		values        map[string]string
+		expectedError string
+	}{
+		{name: "within limits", values: laughs(8, "x")},
+		{name: "too many references", values: laughs(30, "x"), expectedError: `gonf: key "a": expansion too large: more than 1000 references`},
+		{name: "result too long", values: laughs(4, strings.Repeat("x", 100_000)), expectedError: `gonf: key "a": expansion too large: more than 1048576 bytes`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(tt.values)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = cfg.Get("a")
+			if tt.expectedError == "" {
+				if err != nil {
+					t.Fatalf("Get: %v", err)
+				}
+				return
+			}
+			if err == nil || err.Error() != tt.expectedError {
+				t.Errorf("err = %v, want %q", err, tt.expectedError)
+			}
+		})
 	}
 }
 

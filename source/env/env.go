@@ -17,6 +17,8 @@ type envSource struct {
 	source.Meta
 }
 
+var _ gonf.KeyMapper = (*envSource)(nil)
+
 // New returns a Source with all process environment variables.
 //
 // Keys are kept as they are (e.g. "DB_URL"). The Source implements

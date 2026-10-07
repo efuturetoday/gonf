@@ -109,6 +109,7 @@ func TestNew_WithProfile(t *testing.T) {
 		{name: "keys are prefixed", profile: "dev", read: static("a=1\nb.c=2"), expectedKeys: []string{"%dev.a", "%dev.b.c"}},
 		{name: "missing optional file", profile: "dev", read: func(context.Context) ([]byte, error) { return nil, fs.ErrNotExist }},
 		{name: "invalid profile name", profile: "a.b", read: static("a=1"), expectedError: `invalid profile name "a.b"`},
+		{name: "profile name with space", profile: " dev", read: static("a=1"), expectedError: `invalid profile name " dev"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

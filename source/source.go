@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/fs"
 	"strings"
+	"unicode"
 
 	"github.com/efuturetoday/gonf"
 )
@@ -70,9 +71,10 @@ func (s *docSource) Load(ctx context.Context) (map[string]gonf.Value, error) {
 	return withProfile(s.Profile(), values)
 }
 
-// withProfile prefixes every key with "%profile.".
+// withProfile prefixes every key with "%profile.". The name rule matches
+// gonf's: no '.', ',' or whitespace.
 func withProfile(profile string, values map[string]gonf.Value) (map[string]gonf.Value, error) {
-	if strings.ContainsAny(profile, ".,") {
+	if strings.ContainsAny(profile, ".,") || strings.IndexFunc(profile, unicode.IsSpace) >= 0 {
 		return nil, fmt.Errorf("invalid profile name %q", profile)
 	}
 	out := make(map[string]gonf.Value, len(values))

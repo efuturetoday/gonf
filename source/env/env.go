@@ -1,4 +1,5 @@
-// Package env provides a gonf Source with the process environment.
+// Package env provides gonf Sources with environment variables: the
+// process environment (New) and .env files (File).
 package env
 
 import (
@@ -30,7 +31,10 @@ func New(opts ...source.Option) gonf.Source {
 // MapKey returns the environment variable name for key: letters upper case,
 // digits kept, every other character replaced by '_'. "db.pool.max-size"
 // becomes "DB_POOL_MAX_SIZE", "%dev.db.url" becomes "_DEV_DB_URL".
-func (s *envSource) MapKey(key string) string {
+func (s *envSource) MapKey(key string) string { return mapKey(key) }
+
+// mapKey implements MapKey for the env and .env Sources.
+func mapKey(key string) string {
 	var b strings.Builder
 	b.Grow(len(key))
 	for _, r := range key {

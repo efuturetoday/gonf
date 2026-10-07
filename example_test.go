@@ -3,6 +3,7 @@ package gonf_test
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/efuturetoday/gonf"
 	"github.com/efuturetoday/gonf/source"
@@ -72,4 +73,55 @@ func ExampleWithFactories() {
 	v, _ := cfg.Lookup("db.password")
 	fmt.Println(v.Origin.Source)
 	// Output: vault:https://vault:8200
+}
+
+func ExampleBind() {
+	type Pool struct {
+		MaxSize int           `default:"10"`
+		Idle    time.Duration `cfg:"idle-timeout" default:"5m"`
+	}
+	type DB struct {
+		URL      string
+		Pool     Pool
+		Replicas []string
+		Timeout  *time.Duration
+	}
+	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(map[string]string{
+		"db.host":          "localhost",
+		"db.url":           "jdbc:postgresql://${db.host}/app",
+		"db.pool.max-size": "20",
+		"db.replicas":      "replica-1,replica-2",
+	})))
+	if err != nil {
+		panic(err)
+	}
+	db, err := gonf.Bind[DB](cfg, "db")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(db.URL)
+	fmt.Println(db.Pool.MaxSize, db.Pool.Idle, db.Replicas, db.Timeout)
+	// Output:
+	// jdbc:postgresql://localhost/app
+	// 20 5m0s [replica-1 replica-2] <nil>
+}
+
+func ExampleBindError() {
+	type DB struct {
+		URL     string
+		MaxSize int
+	}
+	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(
+		map[string]string{"db.max-size": "ten"},
+		source.WithName("file:app.properties"),
+	)))
+	if err != nil {
+		panic(err)
+	}
+	_, err = gonf.Bind[DB](cfg, "db")
+	fmt.Println(err)
+	// Output:
+	// gonf: bind "db": 2 problems:
+	//   db.url: required, no value
+	//   db.max-size: invalid int "ten" (from file:app.properties)
 }

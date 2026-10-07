@@ -35,8 +35,18 @@ func (c *Config) Get(key string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%w: %q", ErrNotFound, key)
 	}
+	s, err := c.expand(key, v.Raw)
+	if err != nil {
+		return "", fmt.Errorf("gonf: key %q: %w", key, err)
+	}
+	return s, nil
+}
+
+// expand expands the expressions in s, which is the value of key or its
+// default. Its errors do not name key; callers add it.
+func (c *Config) expand(key, s string) (string, error) {
 	e := expander{c: c, chain: []string{key}}
-	return e.expand(v.Raw)
+	return e.expand(s)
 }
 
 // expander expands the expressions of one Get call.
@@ -61,7 +71,7 @@ func (e *expander) expand(s string) (string, error) {
 		case strings.HasPrefix(s[i:], "${"):
 			end := closingBrace(s, i+2)
 			if end < 0 {
-				return "", e.errorf("value of %q: unclosed \"${\"", e.chain[len(e.chain)-1])
+				return "", fmt.Errorf("value of %q: unclosed \"${\"", e.chain[len(e.chain)-1])
 			}
 			v, err := e.reference(s[i+2 : end])
 			if err != nil {
@@ -74,7 +84,7 @@ func (e *expander) expand(s string) (string, error) {
 			i++
 		}
 		if b.Len() > maxExpandedLen {
-			return "", e.errorf("expansion too large: more than %d bytes", maxExpandedLen)
+			return "", fmt.Errorf("expansion too large: more than %d bytes", maxExpandedLen)
 		}
 	}
 	return b.String(), nil
@@ -84,32 +94,31 @@ func (e *expander) expand(s string) (string, error) {
 func (e *expander) reference(body string) (string, error) {
 	e.references++
 	if e.references > maxReferences {
-		return "", e.errorf("expansion too large: more than %d references", maxReferences)
+		return "", fmt.Errorf("expansion too large: more than %d references", maxReferences)
 	}
 	key, def, hasDefault := strings.Cut(body, ":")
 	current := e.chain[len(e.chain)-1]
 	switch {
 	case key == "":
-		return "", e.errorf("value of %q: empty reference", current)
+		return "", fmt.Errorf("value of %q: empty reference", current)
 	case strings.Contains(key, "${"):
-		return "", e.errorf("value of %q: nested expression in reference %q is not supported", current, key)
+		return "", fmt.Errorf("value of %q: nested expression in reference %q is not supported", current, key)
 	case slices.Contains(e.chain, key):
-		return "", e.errorf("cycle %s -> %s", strings.Join(e.chain, " -> "), key)
+		return "", fmt.Errorf("cycle %s -> %s", strings.Join(e.chain, " -> "), key)
 	}
 	v, ok := e.c.Lookup(key)
 	if !ok {
 		if hasDefault {
 			return e.expand(def)
 		}
-		return "", e.errorf("unresolved reference %q (%s)", key, strings.Join(e.chain, " -> "))
+		if len(e.chain) == 1 {
+			return "", fmt.Errorf("unresolved reference %q", key)
+		}
+		return "", fmt.Errorf("unresolved reference %q (%s)", key, strings.Join(e.chain, " -> "))
 	}
 	e.chain = append(e.chain, key)
 	defer func() { e.chain = e.chain[:len(e.chain)-1] }()
 	return e.expand(v.Raw)
-}
-
-func (e *expander) errorf(format string, args ...any) error {
-	return fmt.Errorf("gonf: key %q: %s", e.chain[0], fmt.Sprintf(format, args...))
 }
 
 // closingBrace returns the index of the '}' that closes the expression whose

@@ -58,7 +58,7 @@ func (s *envSource) Load(context.Context) (map[string]gonf.Value, error) {
 		if !ok || k == "" {
 			continue
 		}
-		out[k] = gonf.Value{Raw: v}
+		out[k] = gonf.Value{Raw: v, Origin: gonf.Origin{Location: "env:" + k}}
 	}
 	return out, nil
 }

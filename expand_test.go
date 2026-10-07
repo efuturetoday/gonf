@@ -56,7 +56,7 @@ func TestConfig_Get(t *testing.T) {
 		{name: "escape", key: "escaped", expected: "${db.host}"},
 		{name: "escape in default", key: "escaped.in.default", expected: "${x}"},
 		{name: "dollars without braces stay", key: "plain.dollars", expected: "a$b $ {c} }"},
-		{name: "unresolved reference", key: "unresolved", expectedError: `gonf: key "unresolved": unresolved reference "missing" (unresolved)`},
+		{name: "unresolved reference", key: "unresolved", expectedError: `gonf: key "unresolved": unresolved reference "missing"`},
 		{name: "unresolved reference names the chain", key: "via", expectedError: `gonf: key "via": unresolved reference "missing" (via -> unresolved)`},
 		{name: "cycle", key: "cycle.a", expectedError: `gonf: key "cycle.a": cycle cycle.a -> cycle.b -> cycle.a`},
 		{name: "self reference is a cycle despite default", key: "self", expectedError: `cycle self -> self`},

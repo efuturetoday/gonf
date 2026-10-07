@@ -14,6 +14,9 @@
 // Values may reference other keys with ${key} or ${key:default}; Get expands
 // them.
 //
+// Bind maps the keys under a prefix onto a struct, such as "db.url" and
+// "db.pool.max-size" onto a DBConfig, and reports all problems at once.
+//
 // Sources that need configuration themselves, such as a Vault Source whose
 // address is configured in a file, are created by a SourceFactory (see
 // WithFactories).

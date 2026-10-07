@@ -37,6 +37,9 @@ func TestNew(t *testing.T) {
 			if got[tt.key].Raw != tt.expectedRaw {
 				t.Errorf("%s = %q, want %q", tt.key, got[tt.key].Raw, tt.expectedRaw)
 			}
+			if loc := got[tt.key].Origin.Location; loc != "env:"+tt.key {
+				t.Errorf("%s location = %q, want %q", tt.key, loc, "env:"+tt.key)
+			}
 		})
 	}
 }

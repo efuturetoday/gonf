@@ -34,7 +34,7 @@ func (s upperSource) Load(context.Context) (map[string]gonf.Value, error) {
 	return out, nil
 }
 func (s upperSource) MapKey(key string) string {
-	return strings.ToUpper(strings.NewReplacer(".", "_", "%", "_").Replace(key))
+	return strings.ToUpper(strings.NewReplacer(".", "_", "%", "_", "-", "_", "[", "_", "]", "_").Replace(key))
 }
 
 func TestWithProfiles(t *testing.T) {

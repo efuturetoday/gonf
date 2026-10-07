@@ -16,9 +16,20 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"time"
 
+	"github.com/efuturetoday/gonf"
 	"github.com/efuturetoday/gonf/boot"
 )
+
+// DB is bound to the keys under "db".
+type DB struct {
+	URL  string
+	Pool struct {
+		MaxSize int `default:"10"`
+	}
+	Timeout time.Duration `default:"5s"`
+}
 
 //go:embed embedded
 var embedded embed.FS
@@ -42,4 +53,10 @@ func main() {
 		v, _ := cfg.Lookup(key)
 		fmt.Printf("%s = %s (from %s, ordinal %d)\n", key, value, v.Origin.Source, v.Origin.Ordinal)
 	}
+
+	db, err := gonf.Bind[DB](cfg, "db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("bound: %+v\n", db)
 }

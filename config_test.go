@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/efuturetoday/gonf"
@@ -17,6 +18,120 @@ func (s failingSource) Name() string { return s.name }
 func (s failingSource) Ordinal() int { return 100 }
 func (s failingSource) Load(context.Context) (map[string]gonf.Value, error) {
 	return nil, errors.New("boom")
+}
+
+// upperSource is a KeyMapper Source with environment-style keys, so tests
+// do not need the process environment.
+type upperSource map[string]string
+
+func (s upperSource) Name() string { return "test:upper" }
+func (s upperSource) Ordinal() int { return 300 }
+func (s upperSource) Load(context.Context) (map[string]gonf.Value, error) {
+	out := map[string]gonf.Value{}
+	for k, v := range s {
+		out[k] = gonf.Value{Raw: v}
+	}
+	return out, nil
+}
+func (s upperSource) MapKey(key string) string {
+	return strings.ToUpper(strings.NewReplacer(".", "_", "%", "_").Replace(key))
+}
+
+func TestWithProfiles(t *testing.T) {
+	t.Parallel()
+	mem := func(name string, ordinal int, values map[string]string) gonf.Source {
+		return memory.New(values, source.WithName(name), source.WithOrdinal(ordinal))
+	}
+	tests := []struct {
+		name            string
+		sources         []gonf.Source
+		profiles        []string
+		expectedRaw     string
+		expectedProfile string
+	}{
+		{
+			name:        "no profile uses base",
+			sources:     []gonf.Source{mem("test:a", 100, map[string]string{"a": "base", "%dev.a": "dev"})},
+			expectedRaw: "base",
+		},
+		{
+			name:            "active profile beats base in same source",
+			sources:         []gonf.Source{mem("test:a", 100, map[string]string{"a": "base", "%dev.a": "dev"})},
+			profiles:        []string{"dev"},
+			expectedRaw:     "dev",
+			expectedProfile: "dev",
+		},
+		{
+			name:        "inactive profile is ignored",
+			sources:     []gonf.Source{mem("test:a", 100, map[string]string{"a": "base", "%dev.a": "dev"})},
+			profiles:    []string{"prod"},
+			expectedRaw: "base",
+		},
+		{
+			name:            "last profile wins",
+			sources:         []gonf.Source{mem("test:a", 100, map[string]string{"%dev.a": "dev", "%local.a": "local"})},
+			profiles:        []string{"dev", "local"},
+			expectedRaw:     "local",
+			expectedProfile: "local",
+		},
+		{
+			name:            "duplicate profile counts at its last position",
+			sources:         []gonf.Source{mem("test:a", 100, map[string]string{"%dev.a": "dev", "%local.a": "local"})},
+			profiles:        []string{"dev", "local", "dev"},
+			expectedRaw:     "dev",
+			expectedProfile: "dev",
+		},
+		{
+			name: "profile beats later registered base at equal ordinal",
+			sources: []gonf.Source{
+				mem("test:profile", 100, map[string]string{"%dev.a": "dev"}),
+				mem("test:base", 100, map[string]string{"a": "base"}),
+			},
+			profiles:        []string{"dev"},
+			expectedRaw:     "dev",
+			expectedProfile: "dev",
+		},
+		{
+			name: "higher ordinal base beats profile",
+			sources: []gonf.Source{
+				mem("test:profile", 100, map[string]string{"%dev.a": "dev"}),
+				mem("test:high", 200, map[string]string{"a": "high"}),
+			},
+			profiles:    []string{"dev"},
+			expectedRaw: "high",
+		},
+		{
+			name:            "names are trimmed and empty names ignored",
+			sources:         []gonf.Source{mem("test:a", 100, map[string]string{"a": "base", "%dev.a": "dev"})},
+			profiles:        []string{" dev ", ""},
+			expectedRaw:     "dev",
+			expectedProfile: "dev",
+		},
+		{
+			name:            "mapped profile key",
+			sources:         []gonf.Source{upperSource{"A": "env-base", "_DEV_A": "env-dev"}},
+			profiles:        []string{"dev"},
+			expectedRaw:     "env-dev",
+			expectedProfile: "dev",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := gonf.Load(context.Background(), gonf.WithSources(tt.sources...), gonf.WithProfiles(tt.profiles...))
+			if err != nil {
+				t.Fatal(err)
+			}
+			v, ok := cfg.Lookup("a")
+			if !ok {
+				t.Fatal("Lookup(a): not found")
+			}
+			if v.Raw != tt.expectedRaw || v.Origin.Profile != tt.expectedProfile {
+				t.Errorf("Lookup(a) = %q (profile %q), want %q (profile %q)",
+					v.Raw, v.Origin.Profile, tt.expectedRaw, tt.expectedProfile)
+			}
+		})
+	}
 }
 
 func TestLoad(t *testing.T) {
@@ -121,6 +236,38 @@ func TestLoad_InvalidSourceName(t *testing.T) {
 	}
 }
 
+func TestLoad_InvalidProfile(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name          string
+		profiles      []string
+		key           string
+		expectedError string
+	}{
+		{name: "profile name with dot", profiles: []string{"a.b"}, expectedError: `invalid profile name "a.b"`},
+		{name: "profile name with comma", profiles: []string{"a,b"}, expectedError: `invalid profile name "a,b"`},
+		{name: "profile key without dot", key: "%dev", expectedError: `invalid profile key "%dev"`},
+		{name: "profile key without name", key: "%.a", expectedError: `invalid profile key "%.a"`},
+		{name: "profile key without base", key: "%dev.", expectedError: `invalid profile key "%dev."`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			values := map[string]string{}
+			if tt.key != "" {
+				values[tt.key] = "x"
+			}
+			_, err := gonf.Load(context.Background(),
+				gonf.WithSources(memory.New(values)),
+				gonf.WithProfiles(tt.profiles...),
+			)
+			if err == nil || !strings.Contains(err.Error(), tt.expectedError) {
+				t.Errorf("err = %v, want %q", err, tt.expectedError)
+			}
+		})
+	}
+}
+
 func TestConfig_Lookup(t *testing.T) {
 	t.Parallel()
 	var zero gonf.Config
@@ -133,6 +280,39 @@ func TestConfig_Lookup(t *testing.T) {
 	}
 	if _, ok := cfg.Lookup("nope"); ok {
 		t.Error("Lookup on empty Config returned ok")
+	}
+}
+
+func TestConfig_Lookup_KeyMapper(t *testing.T) {
+	t.Parallel()
+	cfg, err := gonf.Load(context.Background(),
+		gonf.WithSources(
+			upperSource{"DB_URL": "mapped", "db.user": "exact", "DB_USER": "mapped"},
+			memory.New(map[string]string{"%dev.db.url": "dev"}, source.WithName("test:a"), source.WithOrdinal(100)),
+		),
+		gonf.WithProfiles("dev"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name        string
+		key         string
+		expectedRaw string
+		isFound     bool
+	}{
+		{name: "mapped key found", key: "db.url", expectedRaw: "mapped", isFound: true},
+		{name: "exact key beats mapped key", key: "db.user", expectedRaw: "exact", isFound: true},
+		{name: "profile key is not found directly", key: "%dev.db.url"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			v, ok := cfg.Lookup(tt.key)
+			if ok != tt.isFound || v.Raw != tt.expectedRaw {
+				t.Errorf("Lookup(%q) = %q, %v, want %q, %v", tt.key, v.Raw, ok, tt.expectedRaw, tt.isFound)
+			}
+		})
 	}
 }
 
@@ -150,6 +330,20 @@ func TestConfig_Keys(t *testing.T) {
 	}
 }
 
+func TestConfig_Keys_Profiles(t *testing.T) {
+	t.Parallel()
+	cfg, err := gonf.Load(context.Background(),
+		gonf.WithSources(memory.New(map[string]string{"a": "", "%dev.x": "", "%prod.y": ""})),
+		gonf.WithProfiles("dev"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, expected := cfg.Keys(), []string{"a", "x"}; !slices.Equal(got, expected) {
+		t.Errorf("Keys = %v, want %v", got, expected)
+	}
+}
+
 func TestConfig_Candidates(t *testing.T) {
 	t.Parallel()
 	cfg, err := gonf.Load(context.Background())
@@ -158,6 +352,30 @@ func TestConfig_Candidates(t *testing.T) {
 	}
 	if got := cfg.Candidates("nope"); len(got) != 0 {
 		t.Errorf("Candidates = %v, want empty", got)
+	}
+}
+
+func TestConfig_Candidates_Order(t *testing.T) {
+	t.Parallel()
+	cfg, err := gonf.Load(context.Background(),
+		gonf.WithSources(
+			memory.Defaults(map[string]string{"a": "default"}),
+			memory.New(map[string]string{"a": "one", "%dev.a": "one-dev"}, source.WithName("test:one"), source.WithOrdinal(100)),
+			memory.New(map[string]string{"a": "two"}, source.WithName("test:two"), source.WithOrdinal(100)),
+			upperSource{"A": "env"},
+		),
+		gonf.WithProfiles("dev"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, v := range cfg.Candidates("a") {
+		got = append(got, v.Raw)
+	}
+	// Ordinal first, then profile, then registration.
+	if expected := []string{"env", "one-dev", "two", "one", "default"}; !slices.Equal(got, expected) {
+		t.Errorf("Candidates = %v, want %v", got, expected)
 	}
 }
 

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -92,6 +94,40 @@ func TestNew_StripsBOM(t *testing.T) {
 	}
 	if got["db.url"].Raw != "jdbc:x" {
 		t.Errorf("db.url = %q", got["db.url"].Raw)
+	}
+}
+
+func TestNew_WithProfile(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name          string
+		profile       string
+		read          source.ReadFunc
+		expectedKeys  []string
+		expectedError string
+	}{
+		{name: "keys are prefixed", profile: "dev", read: static("a=1\nb.c=2"), expectedKeys: []string{"%dev.a", "%dev.b.c"}},
+		{name: "missing optional file", profile: "dev", read: func(context.Context) ([]byte, error) { return nil, fs.ErrNotExist }},
+		{name: "invalid profile name", profile: "a.b", read: static("a=1"), expectedError: `invalid profile name "a.b"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := source.New("x:p", tt.read, keyValue, source.Optional(), source.WithProfile(tt.profile)).Load(context.Background())
+			if tt.expectedError != "" {
+				if err == nil || err.Error() != tt.expectedError {
+					t.Fatalf("err = %v, want %q", err, tt.expectedError)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			keys := slices.Sorted(maps.Keys(got))
+			if !slices.Equal(keys, tt.expectedKeys) {
+				t.Errorf("keys = %v, want %v", keys, tt.expectedKeys)
+			}
+		})
 	}
 }
 

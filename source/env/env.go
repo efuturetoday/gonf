@@ -19,10 +19,29 @@ type envSource struct {
 
 // New returns a Source with all process environment variables.
 //
-// Keys are passed through unchanged (e.g. "DB_URL"); mapping them to
-// property keys like "db.url" is not done here.
+// Keys are kept as they are (e.g. "DB_URL"). The Source implements
+// gonf.KeyMapper, so a lookup of "db.url" finds DB_URL (see MapKey).
 func New(opts ...source.Option) gonf.Source {
 	return &envSource{Meta: source.NewMeta("env:", Ordinal, opts...)}
+}
+
+// MapKey returns the environment variable name for key: letters upper case,
+// digits kept, every other character replaced by '_'. "db.pool.max-size"
+// becomes "DB_POOL_MAX_SIZE", "%dev.db.url" becomes "_DEV_DB_URL".
+func (s *envSource) MapKey(key string) string {
+	var b strings.Builder
+	b.Grow(len(key))
+	for _, r := range key {
+		switch {
+		case 'a' <= r && r <= 'z':
+			b.WriteRune(r - 'a' + 'A')
+		case 'A' <= r && r <= 'Z', '0' <= r && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 func (s *envSource) Load(context.Context) (map[string]gonf.Value, error) {

@@ -10,7 +10,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
+	"strings"
 
 	"github.com/efuturetoday/gonf"
 )
@@ -61,5 +63,21 @@ func (s *docSource) Load(ctx context.Context) (map[string]gonf.Value, error) {
 	}
 	// Tolerate a UTF-8 BOM written by some editors.
 	data = bytes.TrimPrefix(data, []byte("\xEF\xBB\xBF"))
-	return s.format.Parse(s.Name(), data)
+	values, err := s.format.Parse(s.Name(), data)
+	if err != nil || s.Profile() == "" {
+		return values, err
+	}
+	return withProfile(s.Profile(), values)
+}
+
+// withProfile prefixes every key with "%profile.".
+func withProfile(profile string, values map[string]gonf.Value) (map[string]gonf.Value, error) {
+	if strings.ContainsAny(profile, ".,") {
+		return nil, fmt.Errorf("invalid profile name %q", profile)
+	}
+	out := make(map[string]gonf.Value, len(values))
+	for k, v := range values {
+		out["%"+profile+"."+k] = v
+	}
+	return out, nil
 }

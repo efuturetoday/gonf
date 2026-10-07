@@ -23,6 +23,9 @@ type Origin struct {
 	Source string
 	// Ordinal is the priority of the Source. Higher wins.
 	Ordinal int
+	// Profile is the profile the value belongs to, e.g. "dev" for a value
+	// from a "%dev.db.url" key. Empty for a base value.
+	Profile string
 	// Location is an optional, more precise position such as
 	// "file:/etc/app/application.properties:12".
 	Location string
@@ -34,13 +37,23 @@ type Origin struct {
 // of origin, e.g. "file:/etc/app.properties", "env:" or
 // "k8s:configmap/my-namespace/app-config" (see Scheme).
 //
-// Load returns flat keys (e.g. "db.pool.max-size"). Sources only need to set
-// Value.Raw and optionally Value.Origin.Location; Source and Ordinal of the
-// Origin are filled in by gonf.Load.
+// Load returns flat keys (e.g. "db.pool.max-size"). A key prefixed with
+// "%profile." (e.g. "%dev.db.url") belongs to that profile. Sources only need
+// to set Value.Raw and optionally Value.Origin.Location; the other Origin
+// fields are filled in by gonf.
 type Source interface {
 	Name() string
 	Ordinal() int
 	Load(ctx context.Context) (map[string]Value, error)
+}
+
+// KeyMapper is implemented by Sources whose keys follow their own naming
+// scheme, such as environment variables. A key not found in such a Source is
+// looked up again under MapKey(key), e.g. "DB_POOL_MAX_SIZE" for
+// "db.pool.max-size" or "_DEV_DB_URL" for "%dev.db.url". MapKey is called on
+// every lookup and must be safe for concurrent use.
+type KeyMapper interface {
+	MapKey(key string) string
 }
 
 // Scheme returns the scheme of a Source name, the part before the first

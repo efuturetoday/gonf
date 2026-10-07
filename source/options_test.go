@@ -14,20 +14,24 @@ func TestNewMeta(t *testing.T) {
 		expectedName       string
 		expectedOrdinal    int
 		expectedIsOptional bool
+		expectedProfile    string
 	}{
 		{name: "defaults", expectedName: "p", expectedOrdinal: 7},
 		{name: "with name", opts: []source.Option{source.WithName("x")}, expectedName: "x", expectedOrdinal: 7},
 		{name: "with ordinal", opts: []source.Option{source.WithOrdinal(42)}, expectedName: "p", expectedOrdinal: 42},
 		{name: "optional", opts: []source.Option{source.Optional()}, expectedName: "p", expectedOrdinal: 7, expectedIsOptional: true},
+		{name: "profile", opts: []source.Option{source.WithProfile("dev")}, expectedName: "p", expectedOrdinal: 7, expectedProfile: "dev"},
 		{name: "later option wins", opts: []source.Option{source.WithOrdinal(1), source.WithOrdinal(2)}, expectedName: "p", expectedOrdinal: 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m := source.NewMeta("p", 7, tt.opts...)
-			if m.Name() != tt.expectedName || m.Ordinal() != tt.expectedOrdinal || m.IsOptional() != tt.expectedIsOptional {
-				t.Errorf("got %q/%d/%v, want %q/%d/%v",
-					m.Name(), m.Ordinal(), m.IsOptional(), tt.expectedName, tt.expectedOrdinal, tt.expectedIsOptional)
+			if m.Name() != tt.expectedName || m.Ordinal() != tt.expectedOrdinal ||
+				m.IsOptional() != tt.expectedIsOptional || m.Profile() != tt.expectedProfile {
+				t.Errorf("got %q/%d/%v/%q, want %q/%d/%v/%q",
+					m.Name(), m.Ordinal(), m.IsOptional(), m.Profile(),
+					tt.expectedName, tt.expectedOrdinal, tt.expectedIsOptional, tt.expectedProfile)
 			}
 		})
 	}

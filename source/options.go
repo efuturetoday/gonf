@@ -24,13 +24,22 @@ func Optional() Option {
 	return func(m *Meta) { m.isOptional = true }
 }
 
-// Meta holds the name, ordinal and optionality of a Source. Providers embed
+// WithProfile makes every key of a document Source (New and providers built
+// on it) belong to profile, as if written "%profile.key". Use it for
+// profile files such as application-dev.properties. Ignored by other
+// Sources.
+func WithProfile(profile string) Option {
+	return func(m *Meta) { m.profile = profile }
+}
+
+// Meta holds the name, ordinal, optionality and profile of a Source. Providers embed
 // it to implement the Name and Ordinal methods of gonf.Source and to support
 // the common Options.
 type Meta struct {
 	name       string
 	ordinal    int
 	isOptional bool
+	profile    string
 }
 
 // NewMeta returns a Meta with the provider's defaults, overridden by opts.
@@ -50,3 +59,6 @@ func (m Meta) Ordinal() int { return m.ordinal }
 
 // IsOptional reports whether Optional was given.
 func (m Meta) IsOptional() bool { return m.isOptional }
+
+// Profile returns the profile given with WithProfile, or "".
+func (m Meta) Profile() string { return m.profile }

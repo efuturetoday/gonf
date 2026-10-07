@@ -1,5 +1,6 @@
-// Package env provides gonf Sources with environment variables: the
-// process environment (New) and .env files (File).
+// Package env provides the process environment as a gonf Source (New) and
+// the environment variable naming scheme (MapKey), which .env files use too
+// (see format/dotenv).
 package env
 
 import (
@@ -28,13 +29,15 @@ func New(opts ...source.Option) gonf.Source {
 	return &envSource{Meta: source.NewMeta("env:", Ordinal, opts...)}
 }
 
+// MapKey implements gonf.KeyMapper with the package function MapKey.
+func (s *envSource) MapKey(key string) string { return MapKey(key) }
+
 // MapKey returns the environment variable name for key: letters upper case,
 // digits kept, every other character replaced by '_'. "db.pool.max-size"
-// becomes "DB_POOL_MAX_SIZE", "%dev.db.url" becomes "_DEV_DB_URL".
-func (s *envSource) MapKey(key string) string { return mapKey(key) }
-
-// mapKey implements MapKey for the env and .env Sources.
-func mapKey(key string) string {
+// becomes "DB_POOL_MAX_SIZE", "%dev.db.url" becomes "_DEV_DB_URL" and
+// "hosts[0]" becomes "HOSTS_0_", as in SmallRye Config. Pass it to
+// source.WithKeyMapper for other Sources with environment-style keys.
+func MapKey(key string) string {
 	var b strings.Builder
 	b.Grow(len(key))
 	for _, r := range key {

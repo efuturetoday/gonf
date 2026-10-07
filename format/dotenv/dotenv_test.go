@@ -1,31 +1,29 @@
-package env_test
+package dotenv_test
 
 import (
-	"context"
 	"maps"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/efuturetoday/gonf"
-	"github.com/efuturetoday/gonf/source"
-	"github.com/efuturetoday/gonf/source/env"
+	"github.com/efuturetoday/gonf/format/dotenv"
 )
 
-// writeFile writes content to a .env file in a temporary directory.
-func writeFile(t *testing.T, content string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), ".env")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
+// parse parses content as a file named ".env".
+func parse(content string) (map[string]string, error) {
+	values, err := dotenv.Format.Parse(".env", []byte(content))
+	if err != nil {
+		return nil, err
 	}
-	return path
+	out := map[string]string{}
+	for k, v := range values {
+		out[k] = v.Raw
+	}
+	return out, nil
 }
 
-func TestFile(t *testing.T) {
+func TestFormat(t *testing.T) {
 	t.Parallel()
-	path := writeFile(t, `# comment
+	got, err := dotenv.Format.Parse(".env", []byte(`# comment
 DB_URL=jdbc:postgresql://localhost/app
 export DB_USER = app
 TRAILING=value   # comment
@@ -37,12 +35,7 @@ MULTI="line one
 line two"
 db.pool.max-size=7
 DB_URL=override
-`)
-	src := env.File(path)
-	if src.Name() != "file:"+path || src.Ordinal() != env.FileOrdinal {
-		t.Errorf("name/ordinal = %q/%d", src.Name(), src.Ordinal())
-	}
-	got, err := src.Load(context.Background())
+`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,14 +63,14 @@ DB_URL=override
 			if !ok || v.Raw != tt.expectedRaw {
 				t.Errorf("%s = %q (found %v), want %q", tt.key, v.Raw, ok, tt.expectedRaw)
 			}
-			if tt.expectedLocation != "" && v.Origin.Location != "file:"+path+tt.expectedLocation {
+			if tt.expectedLocation != "" && v.Origin.Location != ".env"+tt.expectedLocation {
 				t.Errorf("%s location = %q, want suffix %q", tt.key, v.Origin.Location, tt.expectedLocation)
 			}
 		})
 	}
 }
 
-func TestFile_EdgeCases(t *testing.T) {
+func TestFormat_EdgeCases(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
@@ -94,13 +87,9 @@ func TestFile_EdgeCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			values, err := env.File(writeFile(t, tt.content)).Load(context.Background())
+			got, err := parse(tt.content)
 			if err != nil {
 				t.Fatal(err)
-			}
-			got := map[string]string{}
-			for k, v := range values {
-				got[k] = v.Raw
 			}
 			if !maps.Equal(got, tt.expected) {
 				t.Errorf("got %q, want %q", got, tt.expected)
@@ -109,7 +98,7 @@ func TestFile_EdgeCases(t *testing.T) {
 	}
 }
 
-func TestFile_Errors(t *testing.T) {
+func TestFormat_Errors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name          string
@@ -126,7 +115,7 @@ func TestFile_Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := env.File(writeFile(t, tt.content)).Load(context.Background())
+			_, err := parse(tt.content)
 			if err == nil || !strings.HasSuffix(err.Error(), tt.expectedError) {
 				t.Errorf("err = %v, want suffix %q", err, tt.expectedError)
 			}
@@ -134,37 +123,12 @@ func TestFile_Errors(t *testing.T) {
 	}
 }
 
-func TestFile_Optional(t *testing.T) {
-	t.Parallel()
-	got, err := env.File(filepath.Join(t.TempDir(), ".env"), source.Optional()).Load(context.Background())
-	if err != nil || len(got) != 0 {
-		t.Errorf("got %v, %v; want empty and no error", got, err)
-	}
-}
-
-func TestFile_MapKey(t *testing.T) {
-	t.Parallel()
-	path := writeFile(t, "DB_URL=jdbc:dotenv\n_DEV_DB_URL=jdbc:dev\n")
-	cfg, err := gonf.Load(context.Background(), gonf.WithSources(env.File(path)), gonf.WithProfiles("dev"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	v, ok := cfg.Lookup("db.url")
-	if !ok || v.Raw != "jdbc:dev" || v.Origin.Profile != "dev" {
-		t.Errorf("db.url = %+v, want jdbc:dev from profile dev", v)
-	}
-}
-
-func FuzzFile(f *testing.F) {
+func FuzzFormat(f *testing.F) {
 	for _, seed := range []string{"", "A=1", "export A=\"x\\\"y\"", "A='b\nc'", "A=\"", "# c\n\nB=2 # x", "=", "A=\"\\"} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, content string) {
-		path := filepath.Join(t.TempDir(), ".env")
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		values, err := env.File(path).Load(context.Background())
+		values, err := parse(content)
 		if err != nil {
 			return
 		}

@@ -1,31 +1,23 @@
-package env
+// Package dotenv provides the .env format for gonf.
+//
+// Keys in .env files are usually environment variable names such as DB_URL.
+// To find them as "db.url", give the Source the env naming scheme:
+//
+//	file.New(".env", dotenv.Format, source.WithKeyMapper(env.MapKey))
+//
+// Like in Quarkus, a profile value is written with the env profile prefix
+// (_DEV_DB_URL); there are no .env files per profile.
+package dotenv
 
 import (
-	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/efuturetoday/gonf"
 	"github.com/efuturetoday/gonf/source"
 )
 
-// FileOrdinal is the default ordinal of a .env file Source, just below the
-// process environment, as in Quarkus.
-const FileOrdinal = 295
-
-type fileSource struct {
-	gonf.Source
-}
-
-var _ gonf.KeyMapper = fileSource{}
-
-// File returns a Source reading the .env file at path, named "file:" + path.
-// Like New it implements gonf.KeyMapper, so "DB_URL" in the file is found
-// as "db.url" and "_DEV_DB_URL" as "%dev.db.url". The variables are not
-// added to the process environment.
-//
-// Supported syntax, one assignment per line:
+// Format is the .env format, one assignment per line:
 //
 //	# comment
 //	DB_URL=jdbc:postgresql://localhost/app   # trailing comment
@@ -35,15 +27,9 @@ var _ gonf.KeyMapper = fileSource{}
 //
 // Double-quoted values support \n, \r, \t, \" and \\ and may span lines;
 // single-quoted values are taken literally. Unquoted values end at the line
-// end or at " #". Later assignments override earlier ones.
-func File(path string, opts ...source.Option) gonf.Source {
-	opts = append([]source.Option{source.WithOrdinal(FileOrdinal)}, opts...)
-	read := func(context.Context) ([]byte, error) { return os.ReadFile(path) }
-	return fileSource{Source: source.New("file:"+path, read, source.FormatFunc(parseDotenv), opts...)}
-}
-
-// MapKey maps key like the env Source does.
-func (fileSource) MapKey(key string) string { return mapKey(key) }
+// end or at " #". Keys may contain letters, digits, '_', '.' and '-'. Later
+// assignments override earlier ones.
+var Format source.Format = source.FormatFunc(parseDotenv)
 
 // parseDotenv parses the content of a .env file.
 func parseDotenv(name string, data []byte) (map[string]gonf.Value, error) {

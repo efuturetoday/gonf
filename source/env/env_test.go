@@ -74,22 +74,21 @@ func TestEnvSource_MapKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := mapper.MapKey(tt.key); got != tt.expected {
+				t.Errorf("method MapKey(%q) = %q, want %q", tt.key, got, tt.expected)
+			}
+			if got := env.MapKey(tt.key); got != tt.expected {
 				t.Errorf("MapKey(%q) = %q, want %q", tt.key, got, tt.expected)
 			}
 		})
 	}
 }
 
-func FuzzEnvSource_MapKey(f *testing.F) {
-	mapper, ok := env.New().(gonf.KeyMapper)
-	if !ok {
-		f.Fatal("env Source does not implement gonf.KeyMapper")
-	}
+func FuzzMapKey(f *testing.F) {
 	for _, seed := range []string{"", "db.pool.max-size", "%dev.a", "größe", "\xff"} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, key string) {
-		got := mapper.MapKey(key)
+		got := env.MapKey(key)
 		for _, c := range []byte(got) {
 			if !('A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '_') {
 				t.Fatalf("MapKey(%q) = %q contains %q", key, got, c)
@@ -98,7 +97,7 @@ func FuzzEnvSource_MapKey(f *testing.F) {
 		if len(got) != utf8.RuneCountInString(key) {
 			t.Errorf("MapKey(%q) = %q, want one character per rune", key, got)
 		}
-		if again := mapper.MapKey(got); again != got {
+		if again := env.MapKey(got); again != got {
 			t.Errorf("MapKey not idempotent: %q -> %q", got, again)
 		}
 	})

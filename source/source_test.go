@@ -132,6 +132,38 @@ func TestNew_WithProfile(t *testing.T) {
 	}
 }
 
+func TestNew_WithKeyMapper(t *testing.T) {
+	t.Parallel()
+	if _, ok := source.New("x:p", static("a=1"), keyValue).(gonf.KeyMapper); ok {
+		t.Error("Source without WithKeyMapper implements gonf.KeyMapper")
+	}
+	upper := source.WithKeyMapper(func(key string) string {
+		return strings.ToUpper(strings.NewReplacer(".", "_", "%", "_").Replace(key))
+	})
+	src := source.New("test:p", static("DB_URL=base\n_DEV_DB_URL=dev\nDB_USER=u"), keyValue, upper)
+	cfg, err := gonf.Load(context.Background(), gonf.WithSources(src), gonf.WithProfiles("dev"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		key             string
+		expectedRaw     string
+		expectedProfile string
+	}{
+		{key: "db.url", expectedRaw: "dev", expectedProfile: "dev"},
+		{key: "db.user", expectedRaw: "u"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			t.Parallel()
+			v, ok := cfg.Lookup(tt.key)
+			if !ok || v.Raw != tt.expectedRaw || v.Origin.Profile != tt.expectedProfile {
+				t.Errorf("%s = %+v (found %v), want %q from profile %q", tt.key, v, ok, tt.expectedRaw, tt.expectedProfile)
+			}
+		})
+	}
+}
+
 // static returns a ReadFunc delivering content.
 func static(content string) source.ReadFunc {
 	return func(context.Context) ([]byte, error) { return []byte(content), nil }

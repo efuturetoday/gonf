@@ -1,8 +1,8 @@
 // Package source is the common base for gonf Sources.
 //
-// Document-based Sources are built from two independent parts: a ReadFunc
-// that delivers the bytes (where) and a Format that parses them (how).
-// New combines both. Providers live in subpackages (source/file,
+// Document-based Sources are built from independent parts: a ReadFunc that
+// delivers the bytes (where), a Format that parses them (how) and,
+// optionally, a key naming scheme (WithKeyMapper). New combines them. Providers live in subpackages (source/file,
 // source/env, source/memory), formats in format/... packages.
 package source
 
@@ -47,12 +47,26 @@ type docSource struct {
 // format. Reading and parsing happen on Load, not here. name identifies the
 // Source in Origin and error messages.
 func New(name string, read ReadFunc, format Format, opts ...Option) gonf.Source {
-	return &docSource{
+	s := &docSource{
 		Meta:   NewMeta(name, DefaultOrdinal, opts...),
 		read:   read,
 		format: format,
 	}
+	if s.mapKey != nil {
+		return mappedDocSource{s}
+	}
+	return s
 }
+
+// mappedDocSource is a docSource with WithKeyMapper. It is a separate type
+// so that Sources without a mapper do not implement gonf.KeyMapper.
+type mappedDocSource struct {
+	*docSource
+}
+
+var _ gonf.KeyMapper = mappedDocSource{}
+
+func (s mappedDocSource) MapKey(key string) string { return s.mapKey(key) }
 
 func (s *docSource) Load(ctx context.Context) (map[string]gonf.Value, error) {
 	data, err := s.read(ctx)

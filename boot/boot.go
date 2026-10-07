@@ -4,7 +4,7 @@
 // Load reads, highest priority first:
 //
 //	300  environment variables (env.New)
-//	295  .env in the working directory (env.File)
+//	295  .env in the working directory (format/dotenv, env key names)
 //	260  config/app.<ext> in the working directory
 //	250  app.<ext> in an embedded file system (WithFS)
 //
@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/efuturetoday/gonf"
+	"github.com/efuturetoday/gonf/format/dotenv"
 	"github.com/efuturetoday/gonf/format/json"
 	"github.com/efuturetoday/gonf/format/properties"
 	"github.com/efuturetoday/gonf/source"
@@ -47,8 +48,10 @@ const (
 )
 
 // Ordinals of the files boot reads. Environment variables keep env.Ordinal
-// (300), the .env file env.FileOrdinal (295).
+// (300).
 const (
+	// DotenvOrdinal is just below the environment, as in Quarkus.
+	DotenvOrdinal    = 295
 	ConfigDirOrdinal = 260
 	EmbeddedOrdinal  = 250
 )
@@ -143,7 +146,8 @@ func load(ctx context.Context, workDir string, opts ...Option) (*gonf.Config, er
 		}
 	}
 	srcs = append(srcs,
-		env.File(filepath.Join(workDir, DotenvFile), source.Optional()),
+		file.New(filepath.Join(workDir, DotenvFile), dotenv.Format,
+			source.Optional(), source.WithOrdinal(DotenvOrdinal), source.WithKeyMapper(env.MapKey)),
 		env.New(),
 	)
 

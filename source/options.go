@@ -32,6 +32,15 @@ func WithProfile(profile string) Option {
 	return func(m *Meta) { m.profile = profile }
 }
 
+// WithKeyMapper makes a document Source (New and providers built on it)
+// implement gonf.KeyMapper with mapKey, so its keys may follow another
+// naming scheme. With env.MapKey, "DB_URL" in a .env file is found as
+// "db.url". mapKey must be safe for concurrent use. Ignored by other
+// Sources.
+func WithKeyMapper(mapKey func(key string) string) Option {
+	return func(m *Meta) { m.mapKey = mapKey }
+}
+
 // Meta holds the name, ordinal, optionality and profile of a Source. Providers embed
 // it to implement the Name and Ordinal methods of gonf.Source and to support
 // the common Options.
@@ -40,6 +49,7 @@ type Meta struct {
 	ordinal    int
 	isOptional bool
 	profile    string
+	mapKey     func(key string) string
 }
 
 // NewMeta returns a Meta with the provider's defaults, overridden by opts.

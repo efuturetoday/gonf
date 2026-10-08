@@ -105,6 +105,9 @@ value of the same ordinal. Values may refer to other keys:
   keys with their environment variables, types and defaults.
 - **[Sources and formats](docs/sources.md)**: `.properties`, JSON, YAML,
   `.env`, the environment, and your own Sources.
+- **[Reloading](docs/reload.md)**: `boot.Watch` keeps the configuration
+  current when files change, and keeps the previous one if a change is
+  invalid.
 
 The API reference is on [pkg.go.dev](https://pkg.go.dev/github.com/efuturetoday/gonf).
 
@@ -115,6 +118,8 @@ The API reference is on [pkg.go.dev](https://pkg.go.dev/github.com/efuturetoday/
 - [`examples/boot`](./examples/boot): loading by convention
 - [`examples/library-module`](./examples/library-module): a library that
   brings its own configuration, and a `-config-doc` flag
+- [`examples/reload`](./examples/reload): a configuration that follows
+  changes to its files
 
 ## Contributing
 

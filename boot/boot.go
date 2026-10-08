@@ -17,6 +17,12 @@
 // boot is extended from outside: WithFormat adds formats, WithFS a packaged
 // default configuration, and With passes any gonf.Option through, e.g.
 // more Sources or SourceFactories.
+//
+// Watch reads the same files as Load and reloads them when they change, see
+// gonf.Watch. The files on disk, including .env, are checked every
+// source.DefaultPollInterval (WithFileTrigger changes that); embedded files
+// and environment variables do not change while the process runs and are
+// not checked.
 package boot
 
 import (
@@ -62,6 +68,7 @@ type Option func(*options)
 type options struct {
 	formats  []format
 	embedded fs.FS
+	trigger  func(path string) source.Trigger
 	core     []gonf.Option
 }
 
@@ -92,6 +99,17 @@ func WithFS(fsys fs.FS) Option {
 	return func(o *options) { o.embedded = fsys }
 }
 
+// WithFileTrigger makes Watch check the files on disk whenever the Trigger
+// that trigger returns for their path says so, instead of every
+// source.DefaultPollInterval:
+//
+//	boot.WithFileTrigger(func(string) source.Trigger { return source.Every(5 * time.Second) })
+//
+// Load ignores it.
+func WithFileTrigger(trigger func(path string) source.Trigger) Option {
+	return func(o *options) { o.trigger = trigger }
+}
+
 // With passes options to gonf.Load, after the ones of boot. Sources added
 // this way count as registered after the files of boot; WithProfiles wins
 // over the profile key.
@@ -108,7 +126,13 @@ func WithMappings(mappings ...gonf.AnyMapping) Option {
 // Load loads the configuration by convention, see the package
 // documentation.
 func Load(ctx context.Context, opts ...Option) (*gonf.Config, error) {
-	return load(ctx, ".", opts...)
+	return gonf.Load(ctx, build(".", opts)...)
+}
+
+// Watch loads the configuration like Load and keeps it current until ctx
+// ends, see gonf.Watch and the package documentation.
+func Watch(ctx context.Context, opts ...Option) (*gonf.Live, error) {
+	return gonf.Watch(ctx, build(".", opts)...)
 }
 
 // location is a place that may hold app.<ext> files.
@@ -118,8 +142,9 @@ type location struct {
 	ordinal int
 }
 
-// load is Load with the working directory as a parameter, for tests.
-func load(ctx context.Context, workDir string, opts ...Option) (*gonf.Config, error) {
+// build returns the options for gonf.Load and gonf.Watch, with workDir as
+// the working directory.
+func build(workDir string, opts []Option) []gonf.Option {
 	o := options{formats: []format{
 		{ext: "properties", format: properties.Format},
 		{ext: "json", format: json.Format},
@@ -128,11 +153,17 @@ func load(ctx context.Context, workDir string, opts ...Option) (*gonf.Config, er
 		opt(&o)
 	}
 
+	onDisk := func(path string, f source.Format, opts ...source.Option) gonf.Source {
+		if o.trigger != nil {
+			opts = append(opts, source.WithTrigger(o.trigger(path)))
+		}
+		return file.New(path, f, opts...)
+	}
 	var locations []location
 	if o.embedded != nil {
 		locations = append(locations, location{
 			open: func(name string, f source.Format, opts ...source.Option) gonf.Source {
-				return file.FS(o.embedded, name, f, opts...)
+				return file.FS(o.embedded, name, f, append(opts, source.WithTrigger(never))...)
 			},
 			ordinal: EmbeddedOrdinal,
 		})
@@ -140,7 +171,7 @@ func load(ctx context.Context, workDir string, opts ...Option) (*gonf.Config, er
 	dir := filepath.Join(workDir, ConfigDir)
 	locations = append(locations, location{
 		open: func(name string, f source.Format, opts ...source.Option) gonf.Source {
-			return file.New(filepath.Join(dir, name), f, opts...)
+			return onDisk(filepath.Join(dir, name), f, opts...)
 		},
 		ordinal: ConfigDirOrdinal,
 	})
@@ -152,7 +183,7 @@ func load(ctx context.Context, workDir string, opts ...Option) (*gonf.Config, er
 		}
 	}
 	srcs = append(srcs,
-		file.New(filepath.Join(workDir, DotenvFile), dotenv.Format,
+		onDisk(filepath.Join(workDir, DotenvFile), dotenv.Format,
 			source.Optional(), source.WithOrdinal(DotenvOrdinal), source.WithKeyMapper(env.MapKey)),
 		env.New(),
 	)
@@ -162,7 +193,13 @@ func load(ctx context.Context, workDir string, opts ...Option) (*gonf.Config, er
 		gonf.WithProfileKey(ProfileKey),
 		gonf.WithFactories(profileFiles(locations, o.formats)),
 	}
-	return gonf.Load(ctx, append(core, o.core...)...)
+	return append(core, o.core...)
+}
+
+// never is the Trigger of embedded files, which never change.
+func never(ctx context.Context, _ func()) error {
+	<-ctx.Done()
+	return nil
 }
 
 // profileFiles returns a factory that reads app-<profile>.<ext> for every

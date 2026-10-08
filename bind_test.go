@@ -859,3 +859,32 @@ func FuzzBind(f *testing.F) {
 		_, _ = gonf.Bind[fuzzTarget](cfg, "x")
 	})
 }
+
+// benchValues are the values of the benchmarks: a plain key, a key with
+// expressions and a number.
+var benchValues = map[string]string{
+	"db.host":          "localhost",
+	"db.url":           "postgres://${db.host}:${db.port:5432}/app",
+	"db.pool.max-size": "10",
+}
+
+type benchDB struct {
+	Host string
+	URL  string
+	Pool struct {
+		MaxSize int
+	}
+}
+
+func BenchmarkBind(b *testing.B) {
+	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(benchValues)))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := gonf.Bind[benchDB](cfg, "db"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

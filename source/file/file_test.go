@@ -3,11 +3,14 @@ package file_test
 import (
 	"context"
 	"errors"
+	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 	"testing/fstest"
+	"testing/synctest"
 	"time"
 
 	"github.com/efuturetoday/gonf"
@@ -113,36 +116,43 @@ func TestNew_ReadsOnLoad(t *testing.T) {
 
 func TestNew_Watch(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join(t.TempDir(), "app.json")
-	write := func(data string) {
-		t.Helper()
-		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+	synctest.Test(t, func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "app.json")
+		write := func(data string) {
+			t.Helper()
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		write(`{"port": 80}`)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		reloads := make(chan *gonf.Config, 10)
+		start := time.Now()
+		live, err := gonf.Watch(ctx,
+			gonf.WithSources(file.New(path, json.Format)),
+			gonf.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+			gonf.OnReload(func(cfg *gonf.Config, err error) {
+				if err == nil {
+					reloads <- cfg
+				}
+			}),
+		)
+		if err != nil {
 			t.Fatal(err)
 		}
-	}
-	write(`{"port": 80}`)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	reloads := make(chan *gonf.Config, 10)
-	live, err := gonf.Watch(ctx,
-		gonf.WithSources(file.New(path, json.Format, source.WithTrigger(source.Every(5*time.Millisecond)))),
-		gonf.OnReload(func(cfg *gonf.Config, err error) {
-			if err == nil {
-				reloads <- cfg
-			}
-		}),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	write(`{"port": 81}`)
-	select {
-	case cfg := <-reloads:
-		if v, _ := cfg.Get("port"); v != "81" || live.Config() != cfg {
-			t.Errorf("port = %q, want 81 in the current Config", v)
+		write(`{"port": 81}`)
+		select {
+		case cfg := <-reloads:
+			if v, _ := cfg.Get("port"); v != "81" || live.Config() != cfg {
+				t.Errorf("port = %q, want 81 in the current Config", v)
+			}
+			if took := time.Since(start); took < source.DefaultPollInterval {
+				t.Errorf("reloaded after %v, before the first check at %v", took, source.DefaultPollInterval)
+			}
+		case <-time.After(time.Minute):
+			t.Fatal("no reload")
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("no reload")
-	}
+	})
 }

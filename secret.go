@@ -52,7 +52,7 @@ func (s Secret[T]) LogValue() slog.Value { return slog.StringValue(masked) }
 func (s Secret[T]) secretType() reflect.Type { return reflect.TypeFor[T]() }
 
 func (s *Secret[T]) setSecret(v reflect.Value) {
-	if x, ok := v.Interface().(T); ok {
+	if x, ok := reflect.TypeAssert[T](v); ok {
 		s.value = x
 	}
 }
@@ -72,7 +72,7 @@ func isSecret(t reflect.Type) bool {
 
 // secretElem returns T of the Secret[T] type t.
 func secretElem(t reflect.Type) reflect.Type {
-	s, _ := reflect.New(t).Interface().(secret)
+	s, _ := reflect.TypeAssert[secret](reflect.New(t))
 	return s.secretType()
 }
 

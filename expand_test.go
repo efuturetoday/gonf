@@ -183,3 +183,20 @@ func FuzzConfig_Get(f *testing.F) {
 		_, _ = cfg.Get("b")
 	})
 }
+
+func BenchmarkConfig_Get(b *testing.B) {
+	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(benchValues)))
+	if err != nil {
+		b.Fatal(err)
+	}
+	for _, key := range []string{"db.host", "db.url"} {
+		b.Run(key, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := cfg.Get(key); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}

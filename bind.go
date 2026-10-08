@@ -325,7 +325,7 @@ func (b *binder) bindStruct(prefix string, m *model, v reflect.Value) {
 	if len(b.problems) > before {
 		return
 	}
-	if val, ok := v.Addr().Interface().(validator); ok {
+	if val, ok := reflect.TypeAssert[validator](v.Addr()); ok {
 		if err := val.Validate(); err != nil {
 			b.fail(prefix, Origin{}, err)
 		}
@@ -610,7 +610,7 @@ func (cs converters) convert(s string, v reflect.Value) error {
 		v.Set(out)
 		return nil
 	}
-	if sec, ok := v.Addr().Interface().(secret); ok {
+	if sec, ok := reflect.TypeAssert[secret](v.Addr()); ok {
 		inner := reflect.New(sec.secretType()).Elem()
 		if err := cs.convert(s, inner); err != nil {
 			return fmt.Errorf("invalid %s, value hidden", inner.Type())
@@ -618,7 +618,7 @@ func (cs converters) convert(s string, v reflect.Value) error {
 		sec.setSecret(inner)
 		return nil
 	}
-	if u, ok := v.Addr().Interface().(encoding.TextUnmarshaler); ok {
+	if u, ok := reflect.TypeAssert[encoding.TextUnmarshaler](v.Addr()); ok {
 		if err := u.UnmarshalText([]byte(s)); err != nil {
 			return fmt.Errorf("invalid %s %q: %w", t, s, err)
 		}

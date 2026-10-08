@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/efuturetoday/gonf"
@@ -78,21 +79,26 @@ func watch(t *testing.T, src gonf.Source) *atomic.Int32 {
 
 func TestEvery(t *testing.T) {
 	t.Parallel()
-	c := &content{data: "a=1"}
-	src := source.New("test:doc", c.read, keyValue, source.WithTrigger(source.Every(5*time.Millisecond)))
-	if _, err := src.Load(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	changes := watch(t, src)
-
-	c.set("a=2", nil)
-	deadline := time.Now().Add(5 * time.Second)
-	for changes.Load() == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("no change reported")
+	synctest.Test(t, func(t *testing.T) {
+		c := &content{data: "a=1"}
+		src := source.New("test:doc", c.read, keyValue, source.WithTrigger(source.Every(5*time.Second)))
+		if _, err := src.Load(context.Background()); err != nil {
+			t.Fatal(err)
 		}
-		time.Sleep(time.Millisecond)
-	}
+		changes := watch(t, src)
+
+		c.set("a=2", nil)
+		time.Sleep(4 * time.Second)
+		synctest.Wait()
+		if got := changes.Load(); got != 0 {
+			t.Errorf("after 4s: %d changes, want 0 before the first check", got)
+		}
+		time.Sleep(time.Second)
+		synctest.Wait()
+		if got := changes.Load(); got != 1 {
+			t.Errorf("after 5s: %d changes, want 1", got)
+		}
+	})
 }
 
 func TestEvery_NotPositive(t *testing.T) {

@@ -212,3 +212,17 @@ func TestWithValidator(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkMapping_Get(b *testing.B) {
+	db := gonf.NewMapping[benchDB]("db")
+	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(benchValues)), gonf.WithMappings(db))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = db.Get(cfg)
+		}
+	})
+}

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"testing/fstest"
+	"testing/synctest"
 	"time"
 
 	"github.com/efuturetoday/gonf"
@@ -279,69 +280,71 @@ func TestLoad_WorkingDirectory(t *testing.T) {
 
 func TestWatch(t *testing.T) {
 	t.Parallel()
-	dir := workDir(t, map[string]string{
-		"config/app.properties":     "boottest.a=1",
-		"config/app-dev.properties": "boottest.a=dev",
-	})
-	embedded := fstest.MapFS{"app.properties": {Data: []byte("boottest.b=embedded")}}
-	var mu sync.Mutex
-	var checked []string
-	trigger := func(path string) source.Trigger {
+	synctest.Test(t, func(t *testing.T) {
+		dir := workDir(t, map[string]string{
+			"config/app.properties":     "boottest.a=1",
+			"config/app-dev.properties": "boottest.a=dev",
+		})
+		embedded := fstest.MapFS{"app.properties": {Data: []byte("boottest.b=embedded")}}
+		var mu sync.Mutex
+		var checked []string
+		trigger := func(path string) source.Trigger {
+			mu.Lock()
+			defer mu.Unlock()
+			checked = append(checked, path)
+			return source.Every(time.Second)
+		}
+		reloads := make(chan *gonf.Config, 10)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		live, err := gonf.Watch(ctx, build(dir, []Option{
+			WithFS(embedded),
+			WithFileTrigger(trigger),
+			With(
+				gonf.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+				gonf.OnReload(func(cfg *gonf.Config, err error) {
+					if err == nil {
+						reloads <- cfg
+					}
+				}),
+			),
+		})...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v, _ := live.Config().Get("boottest.a"); v != "1" {
+			t.Fatalf("boottest.a = %q, want 1", v)
+		}
+
+		// A reload is a complete load, so a new profile reads its files.
+		write := filepath.Join(dir, "config", "app.properties")
+		if err := os.WriteFile(write, []byte("boottest.a=2\ngonf.profile=dev"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case cfg := <-reloads:
+			if v, _ := cfg.Get("boottest.a"); v != "dev" {
+				t.Errorf("boottest.a = %q, want dev from app-dev.properties", v)
+			}
+		case <-time.After(time.Minute):
+			t.Fatal("no reload")
+		}
+
 		mu.Lock()
 		defer mu.Unlock()
-		checked = append(checked, path)
-		return source.Every(5 * time.Millisecond)
-	}
-	reloads := make(chan *gonf.Config, 10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	live, err := gonf.Watch(ctx, build(dir, []Option{
-		WithFS(embedded),
-		WithFileTrigger(trigger),
-		With(
-			gonf.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
-			gonf.OnReload(func(cfg *gonf.Config, err error) {
-				if err == nil {
-					reloads <- cfg
-				}
-			}),
-		),
-	})...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if v, _ := live.Config().Get("boottest.a"); v != "1" {
-		t.Fatalf("boottest.a = %q, want 1", v)
-	}
-
-	// A reload is a complete load, so a new profile reads its files.
-	write := filepath.Join(dir, "config", "app.properties")
-	if err := os.WriteFile(write, []byte("boottest.a=2\ngonf.profile=dev"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case cfg := <-reloads:
-		if v, _ := cfg.Get("boottest.a"); v != "dev" {
-			t.Errorf("boottest.a = %q, want dev from app-dev.properties", v)
+		for _, want := range []string{
+			filepath.Join(dir, "config", "app.properties"),
+			filepath.Join(dir, "config", "app-dev.properties"),
+			filepath.Join(dir, ".env"),
+		} {
+			if !slices.Contains(checked, want) {
+				t.Errorf("%s is not checked; checked: %q", want, checked)
+			}
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("no reload")
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-	for _, want := range []string{
-		filepath.Join(dir, "config", "app.properties"),
-		filepath.Join(dir, "config", "app-dev.properties"),
-		filepath.Join(dir, ".env"),
-	} {
-		if !slices.Contains(checked, want) {
-			t.Errorf("%s is not checked; checked: %q", want, checked)
+		for _, path := range checked {
+			if !strings.HasPrefix(path, dir) {
+				t.Errorf("%s is checked, want only files on disk", path)
+			}
 		}
-	}
-	for _, path := range checked {
-		if !strings.HasPrefix(path, dir) {
-			t.Errorf("%s is checked, want only files on disk", path)
-		}
-	}
+	})
 }

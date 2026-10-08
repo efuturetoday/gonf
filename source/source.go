@@ -9,10 +9,12 @@ package source
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/efuturetoday/gonf"
@@ -34,14 +36,21 @@ func (f FormatFunc) Parse(name string, data []byte) (map[string]gonf.Value, erro
 
 // ReadFunc delivers the raw content of a config document. Returning an error
 // matching fs.ErrNotExist means "not present", which Optional() turns into
-// an empty Source.
+// an empty Source. While gonf.Watch watches the Source, the ReadFunc is
+// also called to check for changes, possibly concurrently with Load.
 type ReadFunc func(ctx context.Context) ([]byte, error)
 
 type docSource struct {
 	Meta
 	read   ReadFunc
 	format Format
+
+	mu sync.Mutex
+	// seen identifies the content last loaded or reported as changed.
+	seen string
 }
+
+var _ gonf.Watcher = (*docSource)(nil)
 
 // New returns a Source that reads content with read and parses it with
 // format. Reading and parsing happen on Load, not here. name identifies the
@@ -70,6 +79,7 @@ func (s mappedDocSource) MapKey(key string) string { return s.mapKey(key) }
 
 func (s *docSource) Load(ctx context.Context) (map[string]gonf.Value, error) {
 	data, err := s.read(ctx)
+	s.see(data, err)
 	if err != nil {
 		if s.IsOptional() && errors.Is(err, fs.ErrNotExist) {
 			return map[string]gonf.Value{}, nil
@@ -83,6 +93,43 @@ func (s *docSource) Load(ctx context.Context) (map[string]gonf.Value, error) {
 		return values, err
 	}
 	return withProfile(s.Profile(), values)
+}
+
+// Watch implements gonf.Watcher. Whenever the Trigger given with WithTrigger
+// says so, it reads the content and calls changed if the content differs
+// from what Load read last. A change is reported once, not on every check.
+func (s *docSource) Watch(ctx context.Context, changed func()) error {
+	trigger := s.trigger
+	if trigger == nil {
+		trigger = Every(DefaultPollInterval)
+	}
+	return trigger(ctx, func() {
+		data, err := s.read(ctx)
+		if ctx.Err() == nil && s.see(data, err) {
+			changed()
+		}
+	})
+}
+
+// see records the result of reading the content and reports whether it
+// differs from the previous one. A missing document and a read error count
+// as content too, so a file that appears or becomes readable is a change.
+func (s *docSource) see(data []byte, err error) bool {
+	var id string
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		id = "missing"
+	case err != nil:
+		id = "error: " + err.Error()
+	default:
+		sum := sha256.Sum256(data)
+		id = string(sum[:])
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	isChanged := s.seen != id
+	s.seen = id
+	return isChanged
 }
 
 // withProfile prefixes every key with "%profile.". The name rule matches

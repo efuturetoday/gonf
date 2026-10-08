@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/fstest"
+	"time"
 
+	"github.com/efuturetoday/gonf"
 	"github.com/efuturetoday/gonf/format/json"
 	"github.com/efuturetoday/gonf/format/properties"
 	"github.com/efuturetoday/gonf/source"
@@ -106,5 +108,41 @@ func TestNew_ReadsOnLoad(t *testing.T) {
 	got, err := src.Load(context.Background())
 	if err != nil || got["a"].Raw != "late" {
 		t.Errorf("got %v, %v; want a=late", got, err)
+	}
+}
+
+func TestNew_Watch(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "app.json")
+	write := func(data string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`{"port": 80}`)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	reloads := make(chan *gonf.Config, 10)
+	live, err := gonf.Watch(ctx,
+		gonf.WithSources(file.New(path, json.Format, source.WithTrigger(source.Every(5*time.Millisecond)))),
+		gonf.OnReload(func(cfg *gonf.Config, err error) {
+			if err == nil {
+				reloads <- cfg
+			}
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	write(`{"port": 81}`)
+	select {
+	case cfg := <-reloads:
+		if v, _ := cfg.Get("port"); v != "81" || live.Config() != cfg {
+			t.Errorf("port = %q, want 81 in the current Config", v)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no reload")
 	}
 }

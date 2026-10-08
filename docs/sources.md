@@ -54,6 +54,7 @@ Options for these Sources:
 | `source.Optional()` | a missing file yields no values instead of an error |
 | `source.WithProfile("dev")` | every key belongs to the profile `dev` |
 | `source.WithKeyMapper(env.MapKey)` | keys are written like environment variables, as in `.env` |
+| `source.WithTrigger(source.Every(5*time.Second))` | while `gonf.Watch` watches, check for changes every 5 s instead of every 2 s |
 
 ## Formats
 

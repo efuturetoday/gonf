@@ -165,6 +165,71 @@ func TestNew_WithKeyMapper(t *testing.T) {
 }
 
 // static returns a ReadFunc delivering content.
+func TestNew_Watch(t *testing.T) {
+	t.Parallel()
+	c := &content{data: "a=1"}
+	trigger, check := manual()
+	src := source.New("test:doc", c.read, keyValue, source.WithTrigger(trigger))
+	if _, err := src.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	changes := watch(t, src)
+
+	steps := []struct {
+		name     string
+		data     string
+		expected int32
+	}{
+		{name: "unchanged", data: "a=1", expected: 0},
+		{name: "changed", data: "a=2", expected: 1},
+		{name: "reported once", data: "a=2", expected: 1},
+		{name: "changed back", data: "a=1", expected: 2},
+	}
+	for _, step := range steps {
+		c.set(step.data, nil)
+		check()
+		if got := changes.Load(); got != step.expected {
+			t.Errorf("%s: %d changes, want %d", step.name, got, step.expected)
+		}
+	}
+}
+
+func TestNew_WatchSince(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		opts      []source.Option
+		before    string
+		beforeErr error
+		after     string
+	}{
+		{name: "changed before watching", before: "a=1", after: "a=2"},
+		{name: "invalid content fixed", before: "invalid", after: "a=1"},
+		{
+			name:      "missing file appears",
+			opts:      []source.Option{source.Optional()},
+			beforeErr: fs.ErrNotExist,
+			after:     "a=1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := &content{data: tt.before, err: tt.beforeErr}
+			trigger, check := manual()
+			src := source.New("test:doc", c.read, keyValue, append(tt.opts, source.WithTrigger(trigger))...)
+			_, _ = src.Load(context.Background())
+			c.set(tt.after, nil)
+			changes := watch(t, src)
+
+			check()
+			if got := changes.Load(); got != 1 {
+				t.Errorf("%d changes, want 1 for what changed since Load", got)
+			}
+		})
+	}
+}
+
 func static(content string) source.ReadFunc {
 	return func(context.Context) ([]byte, error) { return []byte(content), nil }
 }

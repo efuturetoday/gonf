@@ -41,6 +41,14 @@ func WithKeyMapper(mapKey func(key string) string) Option {
 	return func(m *Meta) { m.mapKey = mapKey }
 }
 
+// WithTrigger makes a document Source (New and providers built on it) check
+// whether its content changed whenever trigger says so, while gonf.Watch
+// watches it. Without it, or with nil, the Source checks every
+// DefaultPollInterval. Ignored by other Sources.
+func WithTrigger(trigger Trigger) Option {
+	return func(m *Meta) { m.trigger = trigger }
+}
+
 // Meta holds the name, ordinal, optionality and profile of a Source. Providers embed
 // it to implement the Name and Ordinal methods of gonf.Source and to support
 // the common Options.
@@ -50,6 +58,7 @@ type Meta struct {
 	isOptional bool
 	profile    string
 	mapKey     func(key string) string
+	trigger    Trigger
 }
 
 // NewMeta returns a Meta with the provider's defaults, overridden by opts.

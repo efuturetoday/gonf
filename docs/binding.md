@@ -1,11 +1,9 @@
 # Structs
 
-gonf fills a struct from the keys under a prefix. A library declares its
-configuration once as a Mapping; the application registers it with `Load`,
-which binds every Mapping and reports all problems together:
+`gonf.Bind` fills a struct from the keys under a prefix and reports all
+problems together:
 
 ```go
-// In the library:
 type Config struct {
 	URL  string
 	Pool struct {
@@ -14,6 +12,27 @@ type Config struct {
 	}
 }
 
+cfg, err := boot.Load(ctx)
+...
+c, err := gonf.Bind[Config](cfg, "db")
+```
+
+## Mappings
+
+A Mapping binds a struct once, at `Load`. It is worth it when:
+
+- a library brings its own configuration, and the application should learn
+  about its problems at start, together with all others;
+- `boot.Watch` should reject a reload that breaks the struct, keeping the
+  running configuration;
+- `boot.Describe` should list the keys for a configuration reference;
+- `Explain` should mask its `gonf.Secret` fields; without a Mapping it
+  masks only keys named like secrets, such as `db.password`;
+- the struct is read often: `Get` returns the bound value without binding
+  again.
+
+```go
+// In the library:
 var Mapping = gonf.NewMapping[Config]("db")
 
 // In the application:
@@ -23,8 +42,7 @@ c := db.Mapping.Get(cfg)
 ```
 
 `Get` panics if the Mapping was not registered, because that is a
-programming error; every configuration error is reported by `Load`. To bind
-a struct without registering it, call `gonf.Bind[Config](cfg, "db")`.
+programming error; every configuration error is reported by `Load`.
 
 `Get` binds nothing; it returns the value bound at `Load`. Slices, maps and
 pointers in it are copies, so changing them does not change what other

@@ -10,6 +10,30 @@ Layered configuration for Go: files, `.env` and the environment, with
 profiles, bound to typed structs that report every problem at once. The
 core uses only the standard library.
 
+## Why gonf
+
+I built gonf because tracing a wrong value through environments, files and
+structs should not take an hour, and because every service should be
+configured the same way without losing flexibility.
+
+- **One way for every service.** `boot.Load` reads `config/`, `.env` and
+  the environment by convention; [profiles](docs/profiles.md), formats and
+  your own [sources](docs/sources.md) plug in.
+- **Values that build on each other.**
+  `db.url=postgres://${db.host}:${db.port:5432}/app`, resolved across all
+  sources.
+- **See where a value comes from.** [`cfg.Explain`](docs/explain.md) shows
+  the source, file and line, and what it overrides.
+- **Every problem at start, all at once.** [Binding](docs/binding.md)
+  reports all of them with their origin, and suggests the key you meant.
+- **Secrets that do not leak.** [`gonf.Secret[T]`](docs/secrets.md) prints
+  `****`; values can be stored encrypted.
+- **Safe live reload.** [`boot.Watch`](docs/reload.md) keeps the running
+  configuration when a change is broken.
+- **Docs that cannot drift.** [`boot.Describe`](docs/reference.md) writes
+  the configuration reference from the structs.
+- **Standard library only.** The core has no dependencies.
+
 ## Quick start
 
 ```sh
@@ -38,14 +62,15 @@ type Config struct {
 	}
 }
 
-var appConfig = gonf.NewMapping[Config]("app")
-
 func main() {
-	cfg, err := boot.Load(context.Background(), boot.WithMappings(appConfig))
+	cfg, err := boot.Load(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
-	c := appConfig.Get(cfg)
+	c, err := gonf.Bind[Config](cfg, "app")
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Println(c.Port, c.DB.URL, c.DB.Password)
 }
 ```
@@ -56,6 +81,9 @@ Put the values in `config/app.properties`:
 app.db.url=postgres://localhost/app
 %prod.app.port=80
 ```
+
+Properties are one choice: JSON, YAML and `.env` files, the environment and
+your own sources work too.
 
 Run it:
 
@@ -87,12 +115,15 @@ key the highest ordinal wins. `boot.Load` reads, highest first:
 ```
 300  environment variables          APP_DB_URL=...
 295  .env in the working directory  APP_DB_URL=...
-260  config/app.properties          app.db.url=...
-250  app.properties in the binary   (embedded with boot.WithFS)
+260  config/app.<ext>               app.db.url=...
+250  app.<ext> in the binary        (embedded with boot.WithFS)
 ```
 
-A value for an active profile, such as `%prod.app.port`, beats the plain
-value of the same ordinal. Values may refer to other keys:
+`<ext>` is `properties` or `json`; other formats plug in, such as YAML with
+`boot.WithFormat("yaml", yaml.Format)` from the module
+[`format/yaml`](format/yaml). For an active profile, `app-<profile>.<ext>`
+is read too, and a value such as `%prod.app.port` beats the plain value of
+the same ordinal. Values may refer to other keys:
 `app.db.url=postgres://${app.db.host:localhost}/app`.
 
 ## Guides

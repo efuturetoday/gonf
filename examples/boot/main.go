@@ -22,8 +22,7 @@ import (
 	"github.com/efuturetoday/gonf/boot"
 )
 
-// DB is the configuration under "db". In a real application it lives in
-// the package that uses it, next to its Mapping.
+// DB is the configuration under "db".
 type DB struct {
 	URL  string
 	Pool struct {
@@ -31,8 +30,6 @@ type DB struct {
 	}
 	Timeout time.Duration `default:"5s"`
 }
-
-var dbMapping = gonf.NewMapping[DB]("db")
 
 //go:embed embedded
 var embedded embed.FS
@@ -44,7 +41,6 @@ func main() {
 	}
 	cfg, err := boot.Load(context.Background(),
 		boot.WithFS(defaults),
-		boot.WithMappings(dbMapping),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -60,5 +56,9 @@ func main() {
 		fmt.Printf("%s = %s (from %s, ordinal %d)\n", key, value, v.Origin.Source, v.Origin.Ordinal)
 	}
 
-	fmt.Printf("bound: %+v\n", dbMapping.Get(cfg))
+	db, err := gonf.Bind[DB](cfg, "db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("bound: %+v\n", db)
 }

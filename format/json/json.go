@@ -16,6 +16,11 @@ import (
 // Format flattens a JSON object into dotted keys.
 var Format source.Format = source.FormatFunc(parseJSON)
 
+// maxDepth is the deepest nesting of objects and arrays a file may have.
+// The parser recurses once per level, and the decoder does not limit the
+// depth of tokens in every Go version.
+const maxDepth = 1000
+
 // parseJSON flattens a JSON object into dotted keys: nested objects become
 // "a.b", arrays become "a[0]". Numbers keep their literal text. Every value
 // has its file and line as Location. null values and empty arrays/objects
@@ -33,7 +38,7 @@ func parseJSON(name string, data []byte) (map[string]gonf.Value, error) {
 	if tok != json.Delim('{') {
 		return nil, fmt.Errorf("%s: top level must be a json object", name)
 	}
-	if err := p.object(""); err != nil {
+	if err := p.object("", 1); err != nil {
 		return nil, err
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
@@ -55,8 +60,11 @@ type parser struct {
 }
 
 // object reads the members of an object whose '{' was just read, up to and
-// including its '}'. The decoder limits the nesting depth.
-func (p *parser) object(prefix string) error {
+// including its '}'.
+func (p *parser) object(prefix string, depth int) error {
+	if depth > maxDepth {
+		return p.errorf("nesting deeper than %d", maxDepth)
+	}
 	first := make(map[string]int) // name -> line
 	for p.dec.More() {
 		tok, err := p.dec.Token()
@@ -72,7 +80,7 @@ func (p *parser) object(prefix string) error {
 			return p.errorf("key %q defined twice, first at %s:%d", key, p.name, line)
 		}
 		first[name] = p.lineNow()
-		if err := p.value(key); err != nil {
+		if err := p.value(key, depth); err != nil {
 			return err
 		}
 	}
@@ -82,9 +90,12 @@ func (p *parser) object(prefix string) error {
 
 // array reads the elements of an array whose '[' was just read, up to and
 // including its ']'.
-func (p *parser) array(prefix string) error {
+func (p *parser) array(prefix string, depth int) error {
+	if depth > maxDepth {
+		return p.errorf("nesting deeper than %d", maxDepth)
+	}
 	for i := 0; p.dec.More(); i++ {
-		if err := p.value(prefix + "[" + strconv.Itoa(i) + "]"); err != nil {
+		if err := p.value(prefix+"["+strconv.Itoa(i)+"]", depth); err != nil {
 			return err
 		}
 	}
@@ -93,7 +104,7 @@ func (p *parser) array(prefix string) error {
 }
 
 // value reads the next value and stores it under key.
-func (p *parser) value(key string) error {
+func (p *parser) value(key string, depth int) error {
 	tok, err := p.dec.Token()
 	if err != nil {
 		return p.wrap(err)
@@ -102,9 +113,9 @@ func (p *parser) value(key string) error {
 	case json.Delim:
 		switch tok {
 		case '{':
-			return p.object(key)
+			return p.object(key, depth+1)
 		case '[':
-			return p.array(key)
+			return p.array(key, depth+1)
 		}
 	case string:
 		return p.set(key, tok)

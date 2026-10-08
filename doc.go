@@ -22,6 +22,10 @@
 // with secret values masked; Explanations does so for the whole
 // configuration.
 //
+// Describe lists the keys that the Mappings read, with their types,
+// defaults and descriptions, without reading any value; WriteMarkdown turns
+// the list into the configuration reference of an application.
+//
 // Sources that need configuration themselves, such as a Vault Source whose
 // address is configured in a file, are created by a SourceFactory (see
 // WithFactories).

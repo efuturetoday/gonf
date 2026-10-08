@@ -3,11 +3,14 @@ package gonf_test
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/efuturetoday/gonf"
 	"github.com/efuturetoday/gonf/source"
+	"github.com/efuturetoday/gonf/source/env"
 	"github.com/efuturetoday/gonf/source/memory"
 )
 
@@ -223,4 +226,30 @@ func ExampleWithConverter() {
 	}
 	fmt.Println(api.Endpoint.Host, api.Endpoint.Path)
 	// Output: example.com /v1
+}
+
+func ExampleDescribe() {
+	type DB struct {
+		URL      string              `desc:"Where the database runs."`
+		Password gonf.Secret[string] `desc:"Password of the user."`
+		Pool     struct {
+			MaxSize int `default:"10" desc:"Maximum number of open connections."`
+		}
+	}
+	props, err := gonf.Describe(
+		gonf.WithSources(env.New()),
+		gonf.WithMappings(gonf.NewMapping[DB]("db")),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := gonf.WriteMarkdown(os.Stdout, props); err != nil {
+		log.Fatal(err)
+	}
+	// Output:
+	// | Key | Environment variable | Type | Default | Description |
+	// | --- | --- | --- | --- | --- |
+	// | `db.url` | `DB_URL` | `string` | required | Where the database runs. |
+	// | `db.password` | `DB_PASSWORD` | `string` (secret) | required | Password of the user. |
+	// | `db.pool.max-size` | `DB_POOL_MAX_SIZE` | `int` | `10` | Maximum number of open connections. |
 }

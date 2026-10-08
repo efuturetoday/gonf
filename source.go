@@ -68,7 +68,8 @@ func Scheme(name string) (string, bool) {
 	}
 	for i := 1; i < len(scheme); i++ {
 		c := scheme[i]
-		if !isLetter(c) && !('0' <= c && c <= '9') && c != '+' && c != '-' && c != '.' {
+		isDigit := '0' <= c && c <= '9'
+		if !isLetter(c) && !isDigit && strings.IndexByte("+-.", c) < 0 {
 			return "", false
 		}
 	}

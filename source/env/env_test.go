@@ -90,7 +90,8 @@ func FuzzMapKey(f *testing.F) {
 	f.Fuzz(func(t *testing.T, key string) {
 		got := env.MapKey(key)
 		for _, c := range []byte(got) {
-			if !('A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '_') {
+			isAllowed := 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '_'
+			if !isAllowed {
 				t.Fatalf("MapKey(%q) = %q contains %q", key, got, c)
 			}
 		}

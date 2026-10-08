@@ -67,13 +67,13 @@ func (p *dotenvParser) errorf(format string, args ...any) error {
 // skipBlankAndComments moves to the start of the next assignment.
 func (p *dotenvParser) skipBlankAndComments() {
 	for p.i < len(p.s) {
-		switch c := p.s[p.i]; {
-		case c == ' ' || c == '\t' || c == '\r':
+		switch p.s[p.i] {
+		case ' ', '\t', '\r':
 			p.i++
-		case c == '\n':
+		case '\n':
 			p.i++
 			p.line++
-		case c == '#':
+		case '#':
 			p.skipToLineEnd()
 		default:
 			return
@@ -123,7 +123,8 @@ func validDotenvKey(key string) bool {
 	}
 	for _, c := range []byte(key) {
 		isLetter := 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z'
-		if !isLetter && !('0' <= c && c <= '9') && c != '_' && c != '.' && c != '-' {
+		isDigit := '0' <= c && c <= '9'
+		if !isLetter && !isDigit && strings.IndexByte("_.-", c) < 0 {
 			return false
 		}
 	}

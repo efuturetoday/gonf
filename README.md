@@ -1,5 +1,9 @@
 # gonf
 
+<p align="center">
+  <img src="docs/logo.png" alt="The Go gopher lifting a gear that forms the O of GONF" width="420">
+</p>
+
 [![Go Reference](https://pkg.go.dev/badge/github.com/efuturetoday/gonf.svg)](https://pkg.go.dev/github.com/efuturetoday/gonf) [![Build Status](https://img.shields.io/github/actions/workflow/status/efuturetoday/gonf/test.yml?branch=main)](https://github.com/efuturetoday/gonf/actions) [![Go Version](https://img.shields.io/github/go-mod/go-version/efuturetoday/gonf)](https://go.dev/) [![License](https://img.shields.io/github/license/efuturetoday/gonf)](./LICENSE)
 
 Layered configuration for Go: files, `.env` and the environment, with
@@ -137,3 +141,6 @@ directory.
 ## License
 
 [Apache License 2.0](./LICENSE)
+
+The gonf logo is based on the Go gopher by [Renée French](https://reneefrench.blogspot.com/),
+licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

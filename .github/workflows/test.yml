@@ -12,14 +12,19 @@ jobs:
   test:
     strategy:
       matrix:
-        # The oldest version go.mod allows and the newest release.
-        go: ["1.23", stable]
+        # The oldest version go.mod allows, read from go.mod, and the
+        # newest release.
+        go:
+          - { name: go.mod, file: go.mod }
+          - { name: stable, version: stable }
+    name: test (${{ matrix.go.name }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ matrix.go }}
+          go-version: ${{ matrix.go.version }}
+          go-version-file: ${{ matrix.go.file }}
       - run: go vet ./...
       - run: go test -race ./...
       # format/yaml is a module of its own.

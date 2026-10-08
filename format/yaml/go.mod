@@ -1,6 +1,6 @@
 module github.com/efuturetoday/gonf/format/yaml
 
-go 1.23
+go 1.26
 
 require (
 	github.com/efuturetoday/gonf v0.0.0

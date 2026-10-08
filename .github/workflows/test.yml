@@ -31,27 +31,6 @@ jobs:
       - run: go vet ./... && go test -race ./...
         working-directory: format/yaml
 
-  fuzz:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - { dir: ., name: FuzzConfig_Get }
-          - { dir: ., name: FuzzBind }
-          - { dir: source/env, name: FuzzMapKey }
-          - { dir: format/dotenv, name: FuzzFormat }
-          - { dir: format/json, name: FuzzParseJSON }
-          - { dir: format/properties, name: FuzzParseProperties }
-          - { dir: format/yaml, name: FuzzFormat }
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: stable
-      - run: go test -run '^$' -fuzz '^${{ matrix.target.name }}$' -fuzztime 30s .
-        working-directory: ${{ matrix.target.dir }}
-
   lint:
     runs-on: ubuntu-latest
     steps:

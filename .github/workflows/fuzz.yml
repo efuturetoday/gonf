@@ -1,0 +1,44 @@
+name: fuzz
+
+# go test runs the seeds of every fuzz test on each push; this workflow
+# searches for new inputs, once a night and on demand.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      # go test -fuzz runs one fuzz test of one package at a time.
+      - name: Fuzz every target
+        run: |
+          set -euo pipefail
+          for target in \
+            .:FuzzConfig_Get \
+            .:FuzzBind \
+            source/env:FuzzMapKey \
+            format/dotenv:FuzzFormat \
+            format/json:FuzzParseJSON \
+            format/properties:FuzzParseProperties \
+            format/yaml:FuzzFormat; do
+            dir=${target%%:*}
+            name=${target#*:}
+            echo "::group::$dir $name"
+            (cd "$dir" && go test -run '^$' -fuzz "^${name}\$" -fuzztime 1m .)
+            echo "::endgroup::"
+          done
+      # A failing input is written to testdata/fuzz; keep it to reproduce.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: fuzz-failures
+          path: "**/testdata/fuzz/**"

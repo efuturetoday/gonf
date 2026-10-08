@@ -31,6 +31,7 @@ type Config struct {
 }
 
 type loadedSource struct {
+	src     Source
 	ordinal int
 	values  map[string]Value
 	// mapper is the Source itself if it implements KeyMapper.

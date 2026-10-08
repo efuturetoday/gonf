@@ -381,6 +381,30 @@ func TestWithFactories_Errors(t *testing.T) {
 	})
 }
 
+func TestWithFactories_Closes(t *testing.T) {
+	t.Parallel()
+	own := newLiveSource(map[string]string{"app.port": "80"})
+	factory, created := sourceFactory()
+	app := gonf.NewMapping[portConfig]("app")
+
+	if _, err := gonf.Load(context.Background(), gonf.WithSources(own), gonf.WithFactories(factory), gonf.WithMappings(app)); err != nil {
+		t.Fatal(err)
+	}
+	own.values["app.port"] = "eighty"
+	if _, err := gonf.Load(context.Background(), gonf.WithSources(own), gonf.WithFactories(factory), gonf.WithMappings(app)); err == nil {
+		t.Fatal("Load succeeded, want a BindError")
+	}
+
+	for i, src := range created() {
+		if n := src.closed(); n != 1 {
+			t.Errorf("Source %d of the factory closed %d times, want 1", i, n)
+		}
+	}
+	if n := own.closed(); n != 0 {
+		t.Errorf("a Source of WithSources was closed %d times", n)
+	}
+}
+
 func TestLoad(t *testing.T) {
 	t.Parallel()
 	cfg, err := gonf.Load(context.Background(), gonf.WithSources(

@@ -30,4 +30,8 @@
 // Sources that need configuration themselves, such as a Vault Source whose
 // address is configured in a file, are created by a SourceFactory (see
 // WithFactories).
+//
+// Watch keeps the configuration current: when a Source that implements
+// Watcher reports a change, it loads everything again and, if that
+// succeeds, replaces the Config that Live.Config returns.
 package gonf

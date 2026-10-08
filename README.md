@@ -53,7 +53,8 @@ gonf requires Go 1.23 or newer. Runnable examples:
 
 **Sources and ordinals.** Every Source has an ordinal; for each key the
 highest ordinal wins, and of equal ordinals the Source registered later.
-Included: environment variables, files (`.properties`, `.json`, `.env`) and
+Included: environment variables, files (`.properties`, `.json`, `.env`, and
+`.yaml` in the module `github.com/efuturetoday/gonf/format/yaml`) and
 in-memory values. A Source is a small interface, so Vault or a database fit
 in, and a `SourceFactory` creates Sources that need configuration
 themselves.

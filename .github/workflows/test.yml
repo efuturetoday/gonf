@@ -22,6 +22,9 @@ jobs:
           go-version: ${{ matrix.go }}
       - run: go vet ./...
       - run: go test -race ./...
+      # format/yaml is a module of its own.
+      - run: go vet ./... && go test -race ./...
+        working-directory: format/yaml
 
   fuzz:
     runs-on: ubuntu-latest
@@ -29,17 +32,19 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - { pkg: ., name: FuzzConfig_Get }
-          - { pkg: ., name: FuzzBind }
-          - { pkg: ./source/env, name: FuzzMapKey }
-          - { pkg: ./format/dotenv, name: FuzzFormat }
-          - { pkg: ./format/properties, name: FuzzParseProperties }
+          - { dir: ., name: FuzzConfig_Get }
+          - { dir: ., name: FuzzBind }
+          - { dir: source/env, name: FuzzMapKey }
+          - { dir: format/dotenv, name: FuzzFormat }
+          - { dir: format/properties, name: FuzzParseProperties }
+          - { dir: format/yaml, name: FuzzFormat }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version: stable
-      - run: go test -run '^$' -fuzz '^${{ matrix.target.name }}$' -fuzztime 30s ${{ matrix.target.pkg }}
+      - run: go test -run '^$' -fuzz '^${{ matrix.target.name }}$' -fuzztime 30s .
+        working-directory: ${{ matrix.target.dir }}
 
   lint:
     runs-on: ubuntu-latest
@@ -51,3 +56,7 @@ jobs:
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.13.2
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2
+          working-directory: format/yaml

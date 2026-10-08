@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -296,6 +297,21 @@ func TestWithMappings(t *testing.T) {
 	}
 	if got := m.Get(cfg).Port; got != 80 {
 		t.Errorf("port = %d, want 80", got)
+	}
+}
+
+func TestDescribe(t *testing.T) {
+	t.Parallel()
+	type db struct {
+		URL string `desc:"Address."`
+	}
+	props, err := Describe(WithMappings(gonf.NewMapping[db]("boottest.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := []gonf.Property{{Key: "boottest.db.url", Env: "BOOTTEST_DB_URL", Type: "string", Required: true, Doc: "Address."}}
+	if !reflect.DeepEqual(props, expected) {
+		t.Errorf("Describe = %+v, want %+v", props, expected)
 	}
 }
 

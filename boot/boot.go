@@ -23,6 +23,8 @@
 // default configuration, WithSecretHandler secret handlers, and With
 // passes any gonf.Option through, e.g. more Sources or SourceFactories.
 //
+// Describe lists the keys Load reads, for a configuration reference.
+//
 // Watch reads the same files as Load and reloads them when they change, see
 // gonf.Watch. The files on disk, including .env, are checked every
 // source.DefaultPollInterval (WithFileTrigger changes that); embedded files
@@ -162,6 +164,18 @@ func Load(ctx context.Context, opts ...Option) (*gonf.Config, error) {
 // ends, see gonf.Watch and the package documentation.
 func Watch(ctx context.Context, opts ...Option) (*gonf.Live, error) {
 	return gonf.Watch(ctx, build(".", opts)...)
+}
+
+// Describe lists the keys of the Mappings registered with WithMappings or
+// With, with their environment variable names, see gonf.Describe. It takes
+// the same options as Load and reads no file:
+//
+//	opts := []boot.Option{boot.WithMappings(db.Mapping)}
+//	props, err := boot.Describe(opts...)
+//	...
+//	cfg, err := boot.Load(ctx, opts...)
+func Describe(opts ...Option) ([]gonf.Property, error) {
+	return gonf.Describe(build(".", opts)...)
 }
 
 // location is a place that may hold app.<ext> files.

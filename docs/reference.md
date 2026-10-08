@@ -1,6 +1,6 @@
 # Configuration reference
 
-Operators need to know which keys an application reads. `gonf.Describe`
+Operators need to know which keys an application reads. `boot.Describe`
 lists them from the Mappings, without reading any value, so it works in a
 build or a CI job without a real environment.
 
@@ -20,14 +20,11 @@ type Config struct {
 
 ## Generating the table
 
-Pass the same options as to `Load`. The Sources are not read; they only
-give the environment variable names:
+Pass the same options as to `Load`. No file is read; the environment
+variable names follow the naming of `boot`:
 
 ```go
-props, err := gonf.Describe(
-	gonf.WithSources(env.New()),
-	gonf.WithMappings(db.Mapping),
-)
+props, err := boot.Describe(boot.WithMappings(db.Mapping))
 if err != nil {
 	log.Fatal(err)
 }
@@ -48,12 +45,12 @@ A practical way is a flag of the application itself, which uses the same
 options as `Load`:
 
 ```go
-mappings := gonf.WithMappings(db.Mapping)
+opts := []boot.Option{boot.WithMappings(db.Mapping)}
 if *configDoc {
-	props, err := gonf.Describe(gonf.WithSources(env.New()), mappings)
+	props, err := boot.Describe(opts...)
 	...
 }
-cfg, err := boot.Load(ctx, boot.With(mappings))
+cfg, err := boot.Load(ctx, opts...)
 ```
 
 ```sh
@@ -61,6 +58,13 @@ go run . -config-doc > CONFIG.md
 ```
 
 See [`examples/library-module`](../examples/library-module).
+
+Without boot, `gonf.Describe` takes the options of `gonf.Load`; its Sources
+are not read and only give the environment variable names:
+
+```go
+props, err := gonf.Describe(gonf.WithSources(env.New()), gonf.WithMappings(db.Mapping))
+```
 
 ## As data
 

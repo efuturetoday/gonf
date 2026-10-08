@@ -22,20 +22,16 @@ import (
 	"github.com/efuturetoday/gonf"
 	"github.com/efuturetoday/gonf/boot"
 	"github.com/efuturetoday/gonf/examples/library-module/db"
-	"github.com/efuturetoday/gonf/source/env"
 )
 
 func main() {
 	configDoc := flag.Bool("config-doc", false, "print the configuration keys and exit")
 	flag.Parse()
 	// The same options document and load the configuration.
-	mappings := gonf.WithMappings(db.Mapping)
+	opts := []boot.Option{boot.WithMappings(db.Mapping)}
 
 	if *configDoc {
-		props, err := gonf.Describe(
-			gonf.WithSources(env.New()),
-			mappings,
-		)
+		props, err := boot.Describe(opts...)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -45,7 +41,7 @@ func main() {
 		return
 	}
 
-	cfg, err := boot.Load(context.Background(), boot.With(mappings))
+	cfg, err := boot.Load(context.Background(), opts...)
 	if err != nil {
 		log.Fatal(err)
 	}

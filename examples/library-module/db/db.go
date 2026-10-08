@@ -29,7 +29,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// Mapping is passed to gonf.WithMappings by the application.
+// Mapping is registered by the application, e.g. with boot.WithMappings.
 var Mapping = gonf.NewMapping[Config]("db")
 
 // Open pretends to connect to the database.

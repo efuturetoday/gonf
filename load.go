@@ -24,6 +24,7 @@ type loadOptions struct {
 	converters []converter
 	onReload   func(cfg *Config, err error)
 	logger     *slog.Logger
+	handlers   []namedHandler
 }
 
 // WithSources adds Sources. Can be passed multiple times; the order of
@@ -111,6 +112,10 @@ func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	handlers, err := newHandlers(o.handlers)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	loaded, err := loadSources(ctx, o.sources)
 	if err != nil {
@@ -122,7 +127,7 @@ func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
 		}
 	}
 	cfg := newConfig(loaded, profiles)
-	cfg.validator, cfg.converters = o.validator, cs
+	cfg.validator, cfg.converters, cfg.handlers = o.validator, cs, handlers
 	var created []Source
 	if len(o.factories) > 0 {
 		var late []loadedSource
@@ -131,7 +136,7 @@ func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
 			return nil, created, err
 		}
 		cfg = newConfig(append(loaded, late...), profiles)
-		cfg.validator, cfg.converters = o.validator, cs
+		cfg.validator, cfg.converters, cfg.handlers = o.validator, cs, handlers
 	}
 	if err := cfg.bindMappings(o.mappings); err != nil {
 		return nil, created, err

@@ -156,12 +156,19 @@ func where(o Origin) string {
 // isSecret reports whether the value of key must be masked.
 func (c *Config) isSecret(key string) bool {
 	_, ok := c.secrets[key]
-	return ok || isSecretName(key)
+	return ok || isSecretName(key) || c.isEncrypted(key)
 }
 
 // expandMasked expands s like Get, but references to secret keys expand to
-// "****".
+// "****", and nothing is decrypted.
 func (c *Config) expandMasked(key, s string) (string, error) {
-	e := expander{c: c, chain: []string{key}, isMasked: c.isSecret}
-	return e.expand(s)
+	return c.expand(key, s, Origin{}, hooks{
+		// A key with an encrypted value is secret and masked before its
+		// value is expanded; this keeps any other expression from
+		// decrypting.
+		call: func(*Config, string, string, string, Origin) (string, error) { return masked, nil },
+		reference: func(key string) (string, bool) {
+			return masked, c.isSecret(key)
+		},
+	})
 }

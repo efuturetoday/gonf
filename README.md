@@ -135,8 +135,8 @@ go test -race ./...
 golangci-lint run
 ```
 
-`format/yaml` is a module of its own; run the same commands in its
-directory.
+`format/yaml` and `cmd/gonf` are modules of their own; run the same
+commands in their directories.
 
 ## License
 

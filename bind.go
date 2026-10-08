@@ -227,17 +227,28 @@ type binder struct {
 	defaults map[string]string
 }
 
-// reference is a key that the value of another key refers to with ${...}.
+// reference is a key that the value of another key refers to with ${...},
+// or a SecretHandler that decrypts a part of it.
 type reference struct {
 	from, to string
+	handler  string
 }
 
-// referencesOf returns the function that records the keys that the value
-// of key refers to.
-func (b *binder) referencesOf(key string) func(to string) {
-	return func(to string) {
-		b.referenced[to] = struct{}{}
-		b.references = append(b.references, reference{from: key, to: to})
+// hooks returns the hooks that expand the value of key and record what it
+// uses.
+func (b *binder) hooks(key string) hooks {
+	return hooks{
+		call: func(c *Config, current, name, arg string, origin Origin) (string, error) {
+			if _, ok := c.handlers[name]; ok {
+				b.references = append(b.references, reference{from: key, handler: name})
+			}
+			return decrypt(c, current, name, arg, origin)
+		},
+		reference: func(to string) (string, bool) {
+			b.referenced[to] = struct{}{}
+			b.references = append(b.references, reference{from: key, to: to})
+			return "", false
+		},
 	}
 }
 
@@ -250,13 +261,17 @@ func (b *binder) checkSecretReferences() {
 	for _, r := range b.references {
 		_, isSecretField := b.secrets[r.from]
 		_, isSecretTarget := b.secrets[r.to]
-		isSecretTarget = isSecretTarget || b.c.isSecret(r.to)
+		isSecretTarget = isSecretTarget || r.handler != "" || b.c.isSecret(r.to)
 		if isSecretField || !isSecretTarget || reported[r.from] {
 			continue
 		}
 		reported[r.from] = true
 		v, _ := b.c.Lookup(r.from)
-		b.fail(r.from, v.Origin, fmt.Errorf("refers to the secret %s, make the field a gonf.Secret", r.to))
+		err := fmt.Errorf("refers to the secret %s, make the field a gonf.Secret", r.to)
+		if r.handler != "" {
+			err = fmt.Errorf("is decrypted with %s, make the field a gonf.Secret", r.handler)
+		}
+		b.fail(r.from, v.Origin, err)
 	}
 }
 
@@ -284,7 +299,7 @@ func (b *binder) value(key string) (string, Origin, bool, error) {
 	if !ok {
 		return "", Origin{}, false, nil
 	}
-	s, err := b.c.expand(key, v.Raw, b.referencesOf(key))
+	s, err := b.c.expand(key, v.Raw, v.Origin, b.hooks(key))
 	if err != nil {
 		return "", v.Origin, false, err
 	}
@@ -351,7 +366,7 @@ func (b *binder) bindScalar(key string, f field, v reflect.Value) {
 	case f.def == nil:
 		return
 	}
-	s, err = b.c.expand(key, *f.def, b.referencesOf(key))
+	s, err = b.c.expand(key, *f.def, Origin{Source: "mapping:" + b.prefix}, b.hooks(key))
 	if err != nil {
 		b.fail(key, Origin{}, fmt.Errorf("default: %w", err))
 		return
@@ -396,7 +411,7 @@ func (b *binder) bindSlice(key string, f field, v reflect.Value) {
 	if f.def == nil {
 		return
 	}
-	s, err = b.c.expand(key, *f.def, b.referencesOf(key))
+	s, err = b.c.expand(key, *f.def, Origin{Source: "mapping:" + b.prefix}, b.hooks(key))
 	if err != nil {
 		b.fail(key, Origin{}, fmt.Errorf("default: %w", err))
 		return

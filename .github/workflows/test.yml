@@ -27,9 +27,11 @@ jobs:
           go-version-file: ${{ matrix.go.file }}
       - run: go vet ./...
       - run: go test -race ./...
-      # format/yaml is a module of its own.
+      # format/yaml and cmd/gonf are modules of their own.
       - run: go vet ./... && go test -race ./...
         working-directory: format/yaml
+      - run: go vet ./... && go test -race ./...
+        working-directory: cmd/gonf
 
   lint:
     runs-on: ubuntu-latest
@@ -45,3 +47,7 @@ jobs:
         with:
           version: v2.13.2
           working-directory: format/yaml
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2
+          working-directory: cmd/gonf

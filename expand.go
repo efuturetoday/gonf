@@ -22,6 +22,7 @@ const (
 //
 //	${key}          value of key, an error if it has none
 //	${key:default}  value of key, or default (itself expanded) if it has none
+//	${name::value}  value decrypted by the SecretHandler name
 //	$${             a literal "${"
 //
 // References are resolved like Lookup, so profiles and KeyMappers apply:
@@ -35,7 +36,7 @@ func (c *Config) Get(key string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%w: %q", ErrNotFound, key)
 	}
-	s, err := c.expand(key, v.Raw, nil)
+	s, err := c.expand(key, v.Raw, v.Origin, hooks{call: decrypt})
 	if err != nil {
 		return "", fmt.Errorf("gonf: key %q: %w", key, err)
 	}
@@ -43,11 +44,24 @@ func (c *Config) Get(key string) (string, error) {
 }
 
 // expand expands the expressions in s, which is the value of key or its
-// default. Its errors do not name key; callers add it. If onReference is
-// not nil, it is called with every key that a ${...} expression resolved.
-func (c *Config) expand(key, s string, onReference func(key string)) (string, error) {
-	e := expander{c: c, chain: []string{key}, onReference: onReference}
+// default and comes from origin. Its errors do not name key; callers add
+// it. h connects the expressions to the layers above.
+func (c *Config) expand(key, s string, origin Origin, h hooks) (string, error) {
+	e := expander{c: c, chain: []string{key}, origin: origin, hooks: h}
 	return e.expand(s)
+}
+
+// hooks connect expand to the layers above it, which give the expressions
+// their meaning: expand only knows the syntax.
+type hooks struct {
+	// call resolves a ${name::arg} expression in the value of key; origin
+	// is where the expression is written. It must not be nil. A plain
+	// function, not a method value, keeps Get free of allocations.
+	call func(c *Config, key, name, arg string, origin Origin) (string, error)
+	// reference is called with every key that a ${key} expression
+	// resolved. If it returns ok, replacement is used instead of the
+	// value of key. It may be nil.
+	reference func(key string) (replacement string, ok bool)
 }
 
 // expander expands the expressions of one Get call.
@@ -55,12 +69,11 @@ type expander struct {
 	c *Config
 	// chain holds the keys being expanded, outermost first.
 	chain []string
+	// origin is where the outermost value comes from.
+	origin Origin
 	// references counts the resolved ${...} expressions.
-	references  int
-	onReference func(key string)
-	// isMasked, if not nil, reports the keys whose values are replaced by
-	// "****" instead of being expanded.
-	isMasked func(key string) bool
+	references int
+	hooks      hooks
 }
 
 func (e *expander) expand(s string) (string, error) {
@@ -101,8 +114,11 @@ func (e *expander) reference(body string) (string, error) {
 	if e.references > maxReferences {
 		return "", fmt.Errorf("expansion too large: more than %d references", maxReferences)
 	}
-	key, def, hasDefault := strings.Cut(body, ":")
 	current := e.chain[len(e.chain)-1]
+	if name, value, ok := strings.Cut(body, "::"); ok {
+		return e.call(name, value)
+	}
+	key, def, hasDefault := strings.Cut(body, ":")
 	switch {
 	case key == "":
 		return "", fmt.Errorf("value of %q: empty reference", current)
@@ -121,15 +137,28 @@ func (e *expander) reference(body string) (string, error) {
 		}
 		return "", fmt.Errorf("unresolved reference %q (%s)", key, strings.Join(e.chain, " -> "))
 	}
-	if e.onReference != nil {
-		e.onReference(key)
-	}
-	if e.isMasked != nil && e.isMasked(key) {
-		return masked, nil
+	if e.hooks.reference != nil {
+		if replacement, ok := e.hooks.reference(key); ok {
+			return replacement, nil
+		}
 	}
 	e.chain = append(e.chain, key)
 	defer func() { e.chain = e.chain[:len(e.chain)-1] }()
 	return e.expand(v.Raw)
+}
+
+// call resolves a ${name::arg} expression with hooks.call.
+func (e *expander) call(name, arg string) (string, error) {
+	current := e.chain[len(e.chain)-1]
+	if strings.Contains(arg, "${") {
+		return "", fmt.Errorf("value of %q: nested expression in a %s value is not supported", current, name)
+	}
+	origin := e.origin
+	if len(e.chain) > 1 {
+		v, _ := e.c.Lookup(current)
+		origin = v.Origin
+	}
+	return e.hooks.call(e.c, current, name, arg, origin)
 }
 
 // closingBrace returns the index of the '}' that closes the expression whose

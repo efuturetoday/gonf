@@ -16,9 +16,11 @@ type Config struct {
 	// profiles holds the active profiles, strongest first.
 	profiles []string
 	keys     []string
-	// validator is set with WithValidator, converters with WithConverter.
+	// validator is set with WithValidator, converters with WithConverter,
+	// handlers with WithSecretHandler.
 	validator  func(v any) error
 	converters converters
+	handlers   map[string]SecretHandler
 	// mappings holds the bound value of every Mapping given with
 	// WithMappings.
 	mappings map[AnyMapping]any

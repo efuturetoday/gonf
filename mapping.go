@@ -3,6 +3,7 @@ package gonf
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 )
@@ -74,6 +75,19 @@ func WithValidator(validate func(v any) error) Option {
 	return func(o *loadOptions) { o.validator = validate }
 }
 
+// remember records what Explain needs to know about the keys b bound. Of
+// two Mappings with a default for the same key, the first wins.
+func (c *Config) remember(b *binder) {
+	maps.Copy(c.secrets, b.secrets)
+	maps.Copy(c.read, b.known)
+	maps.Copy(c.read, b.referenced)
+	for key, def := range b.defaults {
+		if _, ok := c.defaults[key]; !ok {
+			c.defaults[key] = Value{Raw: def, Origin: Origin{Source: "mapping:" + b.prefix}}
+		}
+	}
+}
+
 var errNilMapping = errors.New("gonf: nil mapping")
 
 // bindMappings binds every Mapping and stores the values in c.
@@ -101,7 +115,11 @@ func (c *Config) bindMappings(mappings []AnyMapping) error {
 	}
 	checkUnknown(binders)
 	c.mappings = make(map[AnyMapping]any, len(bound))
+	c.secrets = map[string]struct{}{}
+	c.defaults = map[string]Value{}
+	c.read = map[string]struct{}{}
 	for i, b := range binders {
+		c.remember(b)
 		if err := b.err(); err != nil {
 			errs = append(errs, err)
 			continue

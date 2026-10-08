@@ -35,6 +35,7 @@ import (
 //     and on/off in any case
 //   - time.Duration in the format of time.ParseDuration, such as 5s or 1h30m
 //   - any type whose pointer implements encoding.TextUnmarshaler
+//   - Secret[T] of any of these types
 //   - structs, bound to the keys under prefix.name; an embedded struct
 //     without a cfg tag is bound to the keys of its parent
 //   - slices, from a comma-separated value (a,b,c; \, for a literal comma)
@@ -80,7 +81,7 @@ func Bind[T any](c *Config, prefix string, opts ...BindOption) (T, error) {
 
 // checkTarget reports an error unless t is a struct Bind can bind.
 func checkTarget(prefix string, t reflect.Type) error {
-	if t.Kind() != reflect.Struct || isText(t) {
+	if t.Kind() != reflect.Struct || isScalar(t) {
 		return fmt.Errorf("gonf: bind %q: %s is not a struct", prefix, t)
 	}
 	return nil
@@ -89,7 +90,14 @@ func checkTarget(prefix string, t reflect.Type) error {
 // bindRoot binds the struct v to the keys under prefix and validates it. It
 // does not check for unknown keys; see checkUnknown.
 func (c *Config) bindRoot(prefix string, v reflect.Value, opts []BindOption) *binder {
-	b := &binder{c: c, prefix: prefix, known: map[string]struct{}{}, referenced: map[string]struct{}{}}
+	b := &binder{
+		c:          c,
+		prefix:     prefix,
+		known:      map[string]struct{}{},
+		referenced: map[string]struct{}{},
+		secrets:    map[string]struct{}{},
+		defaults:   map[string]string{},
+	}
 	for _, opt := range opts {
 		opt(&b.options)
 	}
@@ -193,6 +201,10 @@ type binder struct {
 	// referenced holds the keys that ${...} expressions resolved, such as
 	// db.host in db.url=jdbc:postgresql://${db.host}/app.
 	referenced map[string]struct{}
+	// secrets holds the keys of fields that hold a Secret, defaults the
+	// default tags by key.
+	secrets  map[string]struct{}
+	defaults map[string]string
 }
 
 func (b *binder) reference(key string) {
@@ -234,6 +246,12 @@ func (b *binder) value(key string) (string, Origin, bool, error) {
 func (b *binder) bind(key string, def *string, v reflect.Value) {
 	b.known[key] = struct{}{}
 	t := v.Type()
+	if holdsSecret(t) {
+		b.secrets[key] = struct{}{}
+	}
+	if def != nil {
+		b.defaults[key] = *def
+	}
 	switch {
 	case isScalar(t):
 		b.bindScalar(key, def, v)
@@ -241,6 +259,8 @@ func (b *binder) bind(key string, def *string, v reflect.Value) {
 		b.bindPointer(key, def, v)
 	case t.Kind() == reflect.Slice:
 		b.bindSlice(key, def, v)
+	case isSecret(t):
+		b.fail(key, Origin{}, fmt.Errorf("unsupported type %s, a secret must hold a single value", t))
 	case def != nil:
 		b.fail(key, Origin{}, fmt.Errorf("default not supported for %s", t))
 	case t.Kind() == reflect.Struct:
@@ -567,7 +587,7 @@ func fields(t reflect.Type) []structField {
 		}
 		if f.Anonymous && !hasTag {
 			switch {
-			case f.Type.Kind() == reflect.Struct && !isText(f.Type):
+			case f.Type.Kind() == reflect.Struct && !isScalar(f.Type):
 				for _, sub := range fields(f.Type) {
 					sub.index = append([]int{i}, sub.index...)
 					out = append(out, sub)
@@ -596,6 +616,14 @@ func fields(t reflect.Type) []structField {
 // convert parses s into v, which must be addressable and of a scalar type.
 func convert(s string, v reflect.Value) error {
 	t := v.Type()
+	if sec, ok := v.Addr().Interface().(secret); ok {
+		inner := reflect.New(sec.secretType()).Elem()
+		if err := convert(s, inner); err != nil {
+			return fmt.Errorf("invalid %s, value hidden", inner.Type())
+		}
+		sec.setSecret(inner)
+		return nil
+	}
 	if u, ok := v.Addr().Interface().(encoding.TextUnmarshaler); ok {
 		if err := u.UnmarshalText([]byte(s)); err != nil {
 			return fmt.Errorf("invalid %s %q: %w", t, s, err)
@@ -665,6 +693,9 @@ func parseBool(s string) (bool, error) {
 // isScalar reports whether a value of type t is converted from a single
 // string.
 func isScalar(t reflect.Type) bool {
+	if isSecret(t) {
+		return isScalar(secretElem(t))
+	}
 	if isText(t) || t == durationType {
 		return true
 	}

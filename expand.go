@@ -58,6 +58,9 @@ type expander struct {
 	// references counts the resolved ${...} expressions.
 	references  int
 	onReference func(key string)
+	// isMasked, if not nil, reports the keys whose values are replaced by
+	// "****" instead of being expanded.
+	isMasked func(key string) bool
 }
 
 func (e *expander) expand(s string) (string, error) {
@@ -120,6 +123,9 @@ func (e *expander) reference(body string) (string, error) {
 	}
 	if e.onReference != nil {
 		e.onReference(key)
+	}
+	if e.isMasked != nil && e.isMasked(key) {
+		return masked, nil
 	}
 	e.chain = append(e.chain, key)
 	defer func() { e.chain = e.chain[:len(e.chain)-1] }()

@@ -21,6 +21,12 @@ type Config struct {
 	// mappings holds the bound value of every Mapping given with
 	// WithMappings.
 	mappings map[AnyMapping]any
+	// secrets holds the keys that Mappings bind to a Secret, defaults the
+	// default tags of the Mappings, read every key the Mappings bound or
+	// referenced.
+	secrets  map[string]struct{}
+	defaults map[string]Value
+	read     map[string]struct{}
 }
 
 type loadedSource struct {
@@ -53,19 +59,23 @@ func newConfig(loaded []loadedSource, profiles []string) *Config {
 	keys := make(map[string]struct{})
 	for _, s := range srcs {
 		for key := range s.values {
-			if !strings.HasPrefix(key, "%") {
-				keys[key] = struct{}{}
-				continue
-			}
-			// Validated in newLoadedSource. Keys of inactive profiles are
-			// never looked up and do not show in Keys.
-			profile, base, _ := splitProfileKey(key)
-			if slices.Contains(profiles, profile) {
+			if base, ok := activeKey(key, profiles); ok {
 				keys[base] = struct{}{}
 			}
 		}
 	}
 	return &Config{sources: srcs, profiles: profiles, keys: slices.Sorted(maps.Keys(keys))}
+}
+
+// activeKey returns the key without its profile prefix, and false for a
+// key of an inactive profile, which is never looked up.
+func activeKey(key string, profiles []string) (string, bool) {
+	if !strings.HasPrefix(key, "%") {
+		return key, true
+	}
+	// Validated in newLoadedSource.
+	profile, base, _ := splitProfileKey(key)
+	return base, slices.Contains(profiles, profile)
 }
 
 // Lookup returns the winning value for key. The value is raw: expressions

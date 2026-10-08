@@ -148,3 +148,59 @@ func ExampleMapping() {
 	fmt.Println(db.Get(cfg).URL, db.Get(cfg).Pool.MaxSize)
 	// Output: jdbc:postgresql://localhost/app 10
 }
+
+func ExampleSecret() {
+	type DBConfig struct {
+		User     string
+		Password gonf.Secret[string]
+	}
+	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(map[string]string{
+		"db.user":     "app",
+		"db.password": "hunter2",
+	})))
+	if err != nil {
+		panic(err)
+	}
+	db, err := gonf.Bind[DBConfig](cfg, "db")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%+v\n", db)
+	fmt.Println(db.Password.Value())
+	// Output:
+	// {User:app Password:****}
+	// hunter2
+}
+
+func ExampleConfig_Explanations() {
+	type DBConfig struct {
+		URL      string
+		Password gonf.Secret[string]
+		Pool     struct {
+			MaxSize int `default:"10"`
+		}
+	}
+	cfg, err := gonf.Load(context.Background(),
+		gonf.WithMappings(gonf.NewMapping[DBConfig]("db")),
+		gonf.WithSources(
+			memory.New(map[string]string{
+				"db.url":      "postgres://app:${db.password}@localhost/app",
+				"db.password": "hunter2",
+			}, source.WithName("file:app.properties"), source.WithOrdinal(100)),
+			memory.New(map[string]string{
+				"db.url": "postgres://app:${db.password}@prod/app",
+			}, source.WithName("memory:overrides")),
+		),
+	)
+	if err != nil {
+		panic(err)
+	}
+	for _, e := range cfg.Explanations() {
+		fmt.Println(e)
+	}
+	// Output:
+	// db.password = **** (file:app.properties)
+	// db.pool.max-size = 10 (mapping:db)
+	// db.url = postgres://app:****@prod/app (memory:overrides)
+	//   overrides postgres://app:${db.password}@localhost/app (file:app.properties)
+}

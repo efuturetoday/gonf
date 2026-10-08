@@ -142,6 +142,61 @@ func TestBind_Bool(t *testing.T) {
 	}
 }
 
+func TestBind_Integers(t *testing.T) {
+	t.Parallel()
+	type numbers struct {
+		N int
+		U uint32
+	}
+	tests := []struct {
+		name          string
+		value         string
+		expectedN     int
+		expectedU     uint32
+		expectedError string
+	}{
+		{name: "decimal", value: "99", expectedN: 99, expectedU: 99},
+		{name: "zero", value: "0", expectedN: 0, expectedU: 0},
+		{name: "octal prefix", value: "0o644", expectedN: 0o644, expectedU: 0o644},
+		{name: "hex prefix", value: "0x1F", expectedN: 31, expectedU: 31},
+		{name: "binary prefix", value: "0b101", expectedN: 5, expectedU: 5},
+		{name: "underscores", value: "1_000", expectedN: 1000, expectedU: 1000},
+		{
+			name:  "leading zero",
+			value: "0644",
+			expectedError: `gonf: bind "x": 2 problems:
+  x.n: ambiguous leading zero in "0644", write 0o644 for octal or 644 for decimal (from file:app.properties)
+  x.u: ambiguous leading zero in "0644", write 0o644 for octal or 644 for decimal (from file:app.properties)`,
+		},
+		{
+			name:  "only zeros",
+			value: "00",
+			expectedError: `gonf: bind "x": 2 problems:
+  x.n: ambiguous leading zero in "00", write 0o0 for octal or 0 for decimal (from file:app.properties)
+  x.u: ambiguous leading zero in "00", write 0o0 for octal or 0 for decimal (from file:app.properties)`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := load(t, map[string]string{"x.n": tt.value, "x.u": tt.value}, nil)
+			got, err := gonf.Bind[numbers](cfg, "x")
+			if tt.expectedError != "" {
+				if err == nil || err.Error() != tt.expectedError {
+					t.Fatalf("err = %v, want\n%s", err, tt.expectedError)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.N != tt.expectedN || got.U != tt.expectedU {
+				t.Errorf("got %+v, want N=%d U=%d", got, tt.expectedN, tt.expectedU)
+			}
+		})
+	}
+}
+
 func TestBind_Names(t *testing.T) {
 	t.Parallel()
 	type names struct {
@@ -417,9 +472,15 @@ func TestBind_Errors(t *testing.T) {
 		},
 		{
 			name:     "invalid int",
-			values:   map[string]string{"x.n": "0x1"},
+			values:   map[string]string{"x.n": "1x"},
 			bind:     bindAs[small],
-			expected: `gonf: bind "x": x.n: invalid int8 "0x1" (from file:app.properties)`,
+			expected: `gonf: bind "x": x.n: invalid int8 "1x" (from file:app.properties)`,
+		},
+		{
+			name:     "ambiguous leading zero",
+			values:   map[string]string{"x.n": "-0_7"},
+			bind:     bindAs[small],
+			expected: `gonf: bind "x": x.n: ambiguous leading zero in "-0_7", write -0o_7 for octal or -7 for decimal (from file:app.properties)`,
 		},
 		{
 			name:   "unsupported types",
@@ -716,6 +777,8 @@ func FuzzBind(f *testing.F) {
 	f.Add(`x.groups."a.b".1.next.name`, "n")
 	f.Add("x.servers[1].next.name", "${x.url}")
 	f.Add("x.labels.a[0]", `a\,b`)
+	f.Add("x.pool.max-size", "-0_7")
+	f.Add("x.groups.1.next.name", "0x")
 	f.Fuzz(func(t *testing.T, key, value string) {
 		cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(map[string]string{key: value})))
 		if err != nil {

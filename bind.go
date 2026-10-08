@@ -32,7 +32,10 @@ import (
 // Field types:
 //
 //   - string, bool, integers, floats; bool accepts true/false, 1/0, yes/no
-//     and on/off in any case
+//     and on/off in any case; integers are decimal unless they have a
+//     prefix as in Go (0b101, 0o644, 0x1f) and may contain underscores
+//     (1_000); a leading zero as in 0644 is an error, as it reads as octal
+//     in Go but as decimal elsewhere
 //   - time.Duration in the format of time.ParseDuration, such as 5s or 1h30m
 //   - any type whose pointer implements encoding.TextUnmarshaler
 //   - any type with a converter given with WithConverter, which replaces
@@ -665,13 +668,19 @@ func (cs converters) convert(s string, v reflect.Value) error {
 		}
 		v.SetBool(isTrue)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		n, err := strconv.ParseInt(s, 10, t.Bits())
+		if err := checkLeadingZero(s); err != nil {
+			return err
+		}
+		n, err := strconv.ParseInt(s, 0, t.Bits())
 		if err != nil {
 			return numberError(s, t, err)
 		}
 		v.SetInt(n)
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		n, err := strconv.ParseUint(s, 10, t.Bits())
+		if err := checkLeadingZero(s); err != nil {
+			return err
+		}
+		n, err := strconv.ParseUint(s, 0, t.Bits())
 		if err != nil {
 			return numberError(s, t, err)
 		}
@@ -686,6 +695,26 @@ func (cs converters) convert(s string, v reflect.Value) error {
 		return fmt.Errorf("unsupported type %s", t)
 	}
 	return nil
+}
+
+// checkLeadingZero reports an integer such as 0644 as ambiguous: Go reads it
+// as octal, SmallRye (Integer.valueOf) as decimal. Without the leading zero
+// or with a prefix (0o644) it is clear.
+func checkLeadingZero(s string) error {
+	sign, digits := "", s
+	if s != "" && (s[0] == '+' || s[0] == '-') {
+		sign, digits = s[:1], s[1:]
+	}
+	if len(digits) < 2 || digits[0] != '0' {
+		return nil
+	}
+	// A letter after the zero is a prefix such as 0x.
+	isDigit := '0' <= digits[1] && digits[1] <= '9'
+	if !isDigit && digits[1] != '_' {
+		return nil
+	}
+	decimal := cmp.Or(strings.TrimLeft(digits, "0_"), "0")
+	return fmt.Errorf("ambiguous leading zero in %q, write %s0o%s for octal or %s%s for decimal", s, sign, digits[1:], sign, decimal)
 }
 
 func numberError(s string, t reflect.Type, err error) error {

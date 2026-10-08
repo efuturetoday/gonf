@@ -22,6 +22,15 @@ type converter struct {
 //
 //	gonf.WithConverter(url.Parse) // fields of type *url.URL
 //
+// A type that Bind would read by its underlying kind needs one if its
+// values are written differently, such as fs.FileMode, a uint32 written in
+// octal:
+//
+//	gonf.WithConverter(func(s string) (fs.FileMode, error) {
+//		n, err := strconv.ParseUint(s, 8, 32)
+//		return fs.FileMode(n), err
+//	})
+//
 // It applies wherever a T is converted from a single value: fields of type
 // T, *T and Secret[T], elements of slices and keys and values of maps. It
 // replaces the built-in conversion of T, e.g. to read a bare number as

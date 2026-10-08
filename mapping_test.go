@@ -15,7 +15,7 @@ import (
 )
 
 type dbConfig struct {
-	URL  string `default:"jdbc://${db.host:localhost}/app"`
+	URL  string `default:"postgres://${db.host:localhost}/app"`
 	Pool struct {
 		MaxSize int `default:"10"`
 	}
@@ -43,7 +43,7 @@ func TestMapping_Get(t *testing.T) {
 	}
 	cfg := load(t, map[string]string{"db.pool.max-size": "20"}, nil, gonf.WithMappings(db))
 	got := db.Get(cfg)
-	if got.URL != "jdbc://localhost/app" || got.Pool.MaxSize != 20 || !slices.Equal(got.Hosts, []string{"a", "b"}) ||
+	if got.URL != "postgres://localhost/app" || got.Pool.MaxSize != 20 || !slices.Equal(got.Hosts, []string{"a", "b"}) ||
 		got.Optional != nil || got.Retries == nil || *got.Retries != 3 {
 		t.Errorf("Get = %+v", got)
 	}
@@ -115,6 +115,15 @@ gonf: bind "req": req.n: required, no value`,
 			name:          "nil and not a struct",
 			mappings:      []gonf.AnyMapping{nil, gonf.NewMapping[int]("n")},
 			expectedError: "gonf: nil mapping\ngonf: bind \"n\": int is not a struct",
+		},
+		{
+			name:   "secret of another mapping",
+			values: map[string]string{"db.password": "s3cret", "app.dsn": "postgres://u:${db.password}@db/app"},
+			mappings: []gonf.AnyMapping{
+				gonf.NewMapping[struct{ DSN string }]("app"),
+				gonf.NewMapping[struct{ Password gonf.Secret[string] }]("db"),
+			},
+			expectedError: `gonf: bind "app": app.dsn: refers to the secret db.password, make the field a gonf.Secret (from file:app.properties)`,
 		},
 		{
 			name:   "invalid mapping keeps its keys known",

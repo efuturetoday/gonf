@@ -19,7 +19,7 @@ type Value struct {
 // Origin describes where a Value came from.
 type Origin struct {
 	// Source is the name of the Source, e.g. "env:" or
-	// "file:/etc/app/application.properties".
+	// "file:/etc/app/app.properties".
 	Source string
 	// Ordinal is the priority of the Source. Higher wins.
 	Ordinal int
@@ -27,7 +27,7 @@ type Origin struct {
 	// from a "%dev.db.url" key. Empty for a base value.
 	Profile string
 	// Location is an optional, more precise position such as
-	// "file:/etc/app/application.properties:12".
+	// "file:/etc/app/app.properties:12".
 	Location string
 }
 

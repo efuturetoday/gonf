@@ -9,7 +9,7 @@ import (
 )
 
 type explainDB struct {
-	URL      string
+	URL      gonf.Secret[string]
 	User     string `default:"admin"`
 	Password gonf.Secret[string]
 	Pool     struct {
@@ -25,6 +25,7 @@ func explainConfig(t *testing.T) *gonf.Config {
 		"db.url":       "postgres://u:${db.password}@localhost/app",
 		"%dev.db.url":  "postgres://u:${db.password}@dev/app",
 		"%prod.db.url": "postgres://prod",
+		"dsn":          "postgres://u:${db.password}@dev/app",
 		"db.password":  "file-pw",
 		"db.user":      "",
 		"api-token":    "t0k3n",
@@ -49,11 +50,17 @@ func TestConfig_Explain(t *testing.T) {
 		expectedErr    error
 	}{
 		{
-			name:          "references to secrets are masked",
-			key:           "db.url",
-			expectedValue: "postgres://u:****@dev/app",
-			expectedString: "db.url = postgres://u:****@dev/app (file:app.properties, profile dev)\n" +
-				"  overrides postgres://u:${db.password}@localhost/app (file:app.properties)",
+			name:           "references to secrets are masked",
+			key:            "dsn",
+			expectedValue:  "postgres://u:****@dev/app",
+			expectedString: "dsn = postgres://u:****@dev/app (file:app.properties)",
+		},
+		{
+			name:           "secret field with a reference",
+			key:            "db.url",
+			expectedValue:  "****",
+			expectedSecret: true,
+			expectedString: "db.url = **** (file:app.properties, profile dev)\n  overrides **** (file:app.properties)",
 		},
 		{
 			name:           "secret field",
@@ -135,7 +142,7 @@ func TestConfig_Explanations(t *testing.T) {
 		keys = append(keys, e.Key)
 		all.WriteString(e.String())
 	}
-	expected := "api-token,broken,db.name,db.password,db.pool.max-size,db.token,db.url,db.user,plain"
+	expected := "api-token,broken,db.name,db.password,db.pool.max-size,db.token,db.url,db.user,dsn,plain"
 	if got := strings.Join(keys, ","); got != expected {
 		t.Errorf("keys = %s, want %s", got, expected)
 	}

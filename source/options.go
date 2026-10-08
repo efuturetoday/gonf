@@ -26,7 +26,7 @@ func Optional() Option {
 
 // WithProfile makes every key of a document Source (New and providers built
 // on it) belong to profile, as if written "%profile.key". Use it for
-// profile files such as application-dev.properties. Ignored by other
+// profile files such as app-dev.properties. Ignored by other
 // Sources.
 func WithProfile(profile string) Option {
 	return func(m *Meta) { m.profile = profile }

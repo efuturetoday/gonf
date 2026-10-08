@@ -5,8 +5,8 @@
 //
 //	file.New(".env", dotenv.Format, source.WithKeyMapper(env.MapKey))
 //
-// Like in Quarkus, a profile value is written with the env profile prefix
-// (_DEV_DB_URL); there are no .env files per profile.
+// A profile value is written with the env profile prefix (_DEV_DB_URL);
+// there are no .env files per profile.
 package dotenv
 
 import (
@@ -20,7 +20,7 @@ import (
 // Format is the .env format, one assignment per line:
 //
 //	# comment
-//	DB_URL=jdbc:postgresql://localhost/app   # trailing comment
+//	DB_URL=postgres://localhost/app   # trailing comment
 //	export DB_USER=app
 //	DB_PASSWORD="multi word \"quoted\" value\nwith escapes"
 //	GREETING='single quoted, taken literally'

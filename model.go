@@ -8,9 +8,8 @@ import (
 
 // model describes how Bind reads a Go type, built from the type alone,
 // without any value. Bind fills a value by it and Describe lists its keys,
-// so the documentation cannot drift from what Load does. Like SmallRye's
-// ConfigMappingInterface, the model reports a type Bind cannot read before
-// any value is read.
+// so the documentation cannot drift from what Load does. The model reports
+// a type Bind cannot read before any value is read.
 type model struct {
 	typ  reflect.Type
 	kind kind

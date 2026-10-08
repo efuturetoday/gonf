@@ -111,9 +111,9 @@ func (c *Config) Explanations() []Explanation {
 // String shows the value, where it comes from and what it overrides: the
 // winning value of a key without errors, else every candidate.
 //
-//	db.url = jdbc:postgresql://prod/app (env:DB_URL)
-//	  overrides jdbc:postgresql://localhost/app (config/app.properties:3, profile dev)
-//	  default jdbc:h2:mem (mapping:db)
+//	db.url = postgres://prod/app (env:DB_URL)
+//	  overrides postgres://localhost/app (config/app.properties:3, profile dev)
+//	  default postgres://localhost/test (mapping:db)
 func (e Explanation) String() string {
 	var b strings.Builder
 	if e.Err != nil {

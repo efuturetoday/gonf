@@ -28,7 +28,7 @@ db:
 	cfg, err := boot.Load(context.Background(),
 		boot.WithFormat("yaml", yaml.Format),
 		boot.WithFS(embedded),
-		boot.With(gonf.WithMappings(db)),
+		boot.WithMappings(db),
 	)
 	if err != nil {
 		log.Fatal(err)

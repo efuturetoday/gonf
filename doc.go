@@ -1,5 +1,6 @@
-// Package gonf is a layered configuration library modeled on
-// SmallRye/MicroProfile Config.
+// Package gonf is a layered configuration library: values come from
+// several Sources such as files and the environment, and are bound to
+// typed structs that report every problem at once.
 //
 // Configuration is read from several Sources. Each Source has an ordinal;
 // for every key the value from the Source with the highest ordinal wins.

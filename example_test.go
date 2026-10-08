@@ -20,10 +20,10 @@ func ExampleLoad() {
 		gonf.WithSources(
 			memory.Defaults(map[string]string{"db.pool.max-size": "10"}),
 			memory.New(map[string]string{
-				"db.url":           "jdbc:postgresql://prod-db/app",
-				"%dev.db.url":      "jdbc:postgresql://localhost/app",
+				"db.url":           "postgres://prod-db/app",
+				"%dev.db.url":      "postgres://localhost/app",
 				"db.pool.max-size": "20",
-			}, source.WithName("file:application.properties"), source.WithOrdinal(100)),
+			}, source.WithName("file:app.properties"), source.WithOrdinal(100)),
 		),
 	)
 	if err != nil {
@@ -34,14 +34,14 @@ func ExampleLoad() {
 		fmt.Printf("%s = %s (from %s, profile %q)\n", key, v.Raw, v.Origin.Source, v.Origin.Profile)
 	}
 	// Output:
-	// db.pool.max-size = 20 (from file:application.properties, profile "")
-	// db.url = jdbc:postgresql://localhost/app (from file:application.properties, profile "dev")
+	// db.pool.max-size = 20 (from file:app.properties, profile "")
+	// db.url = postgres://localhost/app (from file:app.properties, profile "dev")
 }
 
 func ExampleConfig_Get() {
 	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(map[string]string{
 		"db.host": "localhost",
-		"db.url":  "jdbc:postgresql://${db.host}:${db.port:5432}/app",
+		"db.url":  "postgres://${db.host}:${db.port:5432}/app",
 	})))
 	if err != nil {
 		panic(err)
@@ -51,7 +51,7 @@ func ExampleConfig_Get() {
 		panic(err)
 	}
 	fmt.Println(url)
-	// Output: jdbc:postgresql://localhost:5432/app
+	// Output: postgres://localhost:5432/app
 }
 
 func ExampleWithFactories() {
@@ -92,7 +92,7 @@ func ExampleBind() {
 	}
 	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(map[string]string{
 		"db.host":          "localhost",
-		"db.url":           "jdbc:postgresql://${db.host}/app",
+		"db.url":           "postgres://${db.host}/app",
 		"db.pool.max-size": "20",
 		"db.replicas":      "replica-1,replica-2",
 	})))
@@ -106,7 +106,7 @@ func ExampleBind() {
 	fmt.Println(db.URL)
 	fmt.Println(db.Pool.MaxSize, db.Pool.Idle, db.Replicas, db.Timeout)
 	// Output:
-	// jdbc:postgresql://localhost/app
+	// postgres://localhost/app
 	// 20 5m0s [replica-1 replica-2] <nil>
 }
 
@@ -116,7 +116,7 @@ func ExampleBindError() {
 		MaxSize int
 	}
 	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(
-		map[string]string{"db.max-size": "ten", "db.ulr": "jdbc:postgresql://localhost/app"},
+		map[string]string{"db.max-size": "ten", "db.ulr": "postgres://localhost/app"},
 		source.WithName("file:app.properties"),
 	)))
 	if err != nil {
@@ -144,13 +144,13 @@ func ExampleMapping() {
 	// In the application: Load binds and validates every Mapping.
 	cfg, err := gonf.Load(context.Background(),
 		gonf.WithMappings(db),
-		gonf.WithSources(memory.New(map[string]string{"db.url": "jdbc:postgresql://localhost/app"})),
+		gonf.WithSources(memory.New(map[string]string{"db.url": "postgres://localhost/app"})),
 	)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println(db.Get(cfg).URL, db.Get(cfg).Pool.MaxSize)
-	// Output: jdbc:postgresql://localhost/app 10
+	// Output: postgres://localhost/app 10
 }
 
 func ExampleSecret() {
@@ -178,7 +178,6 @@ func ExampleSecret() {
 
 func ExampleConfig_Explanations() {
 	type DBConfig struct {
-		URL      string
 		Password gonf.Secret[string]
 		Pool     struct {
 			MaxSize int `default:"10"`
@@ -188,11 +187,11 @@ func ExampleConfig_Explanations() {
 		gonf.WithMappings(gonf.NewMapping[DBConfig]("db")),
 		gonf.WithSources(
 			memory.New(map[string]string{
-				"db.url":      "postgres://app:${db.password}@localhost/app",
+				"app.dsn":     "postgres://app:${db.password}@localhost/app",
 				"db.password": "hunter2",
 			}, source.WithName("file:app.properties"), source.WithOrdinal(100)),
 			memory.New(map[string]string{
-				"db.url": "postgres://app:${db.password}@prod/app",
+				"app.dsn": "postgres://app:${db.password}@prod/app",
 			}, source.WithName("memory:overrides")),
 		),
 	)
@@ -203,10 +202,10 @@ func ExampleConfig_Explanations() {
 		fmt.Println(e)
 	}
 	// Output:
+	// app.dsn = postgres://app:****@prod/app (memory:overrides)
+	//   overrides postgres://app:${db.password}@localhost/app (file:app.properties)
 	// db.password = **** (file:app.properties)
 	// db.pool.max-size = 10 (mapping:db)
-	// db.url = postgres://app:****@prod/app (memory:overrides)
-	//   overrides postgres://app:${db.password}@localhost/app (file:app.properties)
 }
 
 func ExampleWithConverter() {

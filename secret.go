@@ -10,8 +10,7 @@ import (
 // masked replaces a secret value in every output.
 const masked = "****"
 
-// Secret holds a configuration value that must not show up in output, like
-// Secret<T> in SmallRye Config:
+// Secret holds a configuration value that must not show up in output:
 //
 //	type DB struct {
 //		User     string
@@ -25,7 +24,8 @@ const masked = "****"
 //
 // fmt, encoding/json and other encodings using MarshalText, and log/slog
 // print "****"; Value returns the value. Keys bound to a Secret are masked
-// in Explain.
+// in Explain. A field that refers to a secret key with ${...} must be a
+// Secret too; Bind reports it otherwise.
 type Secret[T any] struct {
 	value T
 }

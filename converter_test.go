@@ -12,7 +12,7 @@ import (
 	"github.com/efuturetoday/gonf/source/memory"
 )
 
-// seconds reads a bare number as seconds, like Quarkus does for durations.
+// seconds reads a bare number as seconds.
 func seconds(s string) (time.Duration, error) {
 	if n, err := strconv.Atoi(s); err == nil {
 		return time.Duration(n) * time.Second, nil

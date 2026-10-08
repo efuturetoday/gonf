@@ -16,7 +16,7 @@ func TestConfig_Get(t *testing.T) {
 	t.Parallel()
 	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(map[string]string{
 		"db.host":            "localhost",
-		"db.url":             "jdbc://${db.host}/app",
+		"db.url":             "postgres://${db.host}/app",
 		"chain":              "${db.url}",
 		"multi":              "${db.host}:${db.port:5432}",
 		"with.default":       "${missing:fallback}",
@@ -46,8 +46,8 @@ func TestConfig_Get(t *testing.T) {
 		expectedError string
 	}{
 		{name: "plain value", key: "db.host", expected: "localhost"},
-		{name: "reference", key: "db.url", expected: "jdbc://localhost/app"},
-		{name: "reference chain", key: "chain", expected: "jdbc://localhost/app"},
+		{name: "reference", key: "db.url", expected: "postgres://localhost/app"},
+		{name: "reference chain", key: "chain", expected: "postgres://localhost/app"},
 		{name: "several expressions", key: "multi", expected: "localhost:5432"},
 		{name: "default", key: "with.default", expected: "fallback"},
 		{name: "default may contain colon", key: "default.with.colon", expected: "http://x"},

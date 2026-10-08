@@ -40,10 +40,10 @@ func main() {
 				"db.pool.max-size": "10",
 				"db.pool.timeout":  "5s",
 			}),
-			file.New(filepath.Join(dir, "application.properties"), properties.Format),
-			file.New(filepath.Join(dir, "application-dev.properties"), properties.Format,
+			file.New(filepath.Join(dir, "app.properties"), properties.Format),
+			file.New(filepath.Join(dir, "app-dev.properties"), properties.Format,
 				source.Optional(), source.WithProfile("dev")),
-			file.New(filepath.Join(dir, "application.json"), json.Format, source.Optional()),
+			file.New(filepath.Join(dir, "app.json"), json.Format, source.Optional()),
 			env.New(),
 		),
 	)

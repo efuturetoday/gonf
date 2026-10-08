@@ -1,5 +1,5 @@
-// Package boot loads configuration by convention, like
-// ConfigProvider.getConfig() in MicroProfile Config and Quarkus.
+// Package boot loads configuration by convention, from files in known
+// places, a .env file and the environment, with profiles.
 //
 // Load reads, highest priority first:
 //
@@ -50,7 +50,7 @@ const (
 // Ordinals of the files boot reads. Environment variables keep env.Ordinal
 // (300).
 const (
-	// DotenvOrdinal is just below the environment, as in Quarkus.
+	// DotenvOrdinal is just below the environment, which overrides .env.
 	DotenvOrdinal    = 295
 	ConfigDirOrdinal = 260
 	EmbeddedOrdinal  = 250
@@ -97,6 +97,12 @@ func WithFS(fsys fs.FS) Option {
 // over the profile key.
 func With(opts ...gonf.Option) Option {
 	return func(o *options) { o.core = append(o.core, opts...) }
+}
+
+// WithMappings registers Mappings, which Load binds and validates; it is
+// short for With(gonf.WithMappings(mappings...)).
+func WithMappings(mappings ...gonf.AnyMapping) Option {
+	return With(gonf.WithMappings(mappings...))
 }
 
 // Load loads the configuration by convention, see the package

@@ -221,6 +221,19 @@ func TestWith(t *testing.T) {
 	}
 }
 
+func TestWithMappings(t *testing.T) {
+	t.Parallel()
+	dir := workDir(t, map[string]string{"config/app.properties": "boottest.port=80\n"})
+	m := gonf.NewMapping[struct{ Port int }]("boottest")
+	cfg, err := load(context.Background(), dir, WithMappings(m))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Get(cfg).Port; got != 80 {
+		t.Errorf("port = %d, want 80", got)
+	}
+}
+
 func TestLoad_Errors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

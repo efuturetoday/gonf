@@ -12,7 +12,7 @@ import (
 
 // Not parallel: t.Setenv modifies the process environment.
 func TestNew(t *testing.T) {
-	t.Setenv("GONF_TEST_DB_URL", "jdbc:env")
+	t.Setenv("GONF_TEST_DB_URL", "postgres://env")
 	t.Setenv("GONF_TEST_WITH_EQUALS", "a=b")
 
 	src := env.New()
@@ -29,7 +29,7 @@ func TestNew(t *testing.T) {
 		key         string
 		expectedRaw string
 	}{
-		{name: "raw key is kept", key: "GONF_TEST_DB_URL", expectedRaw: "jdbc:env"},
+		{name: "raw key is kept", key: "GONF_TEST_DB_URL", expectedRaw: "postgres://env"},
 		{name: "value may contain equals sign", key: "GONF_TEST_WITH_EQUALS", expectedRaw: "a=b"},
 	}
 	for _, tt := range tests {

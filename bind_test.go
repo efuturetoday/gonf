@@ -59,7 +59,7 @@ func TestBind(t *testing.T) {
 	t.Parallel()
 	cfg := load(t, map[string]string{
 		"app.name":     "shop",
-		"db.url":       "jdbc://localhost/app",
+		"db.url":       "postgres://localhost/app",
 		"db.http-port": "8080",
 		"db.ratio":     "0.5",
 		"db.enabled":   "ON",
@@ -75,7 +75,7 @@ func TestBind(t *testing.T) {
 	retries := 3
 	expected := DB{
 		Common:    Common{Timeout: 90 * time.Second},
-		URL:       "jdbc://localhost/app",
+		URL:       "postgres://localhost/app",
 		HTTPPort:  8080,
 		Ratio:     0.5,
 		IsEnabled: true,
@@ -700,7 +700,7 @@ func TestBind_Unknown(t *testing.T) {
 			name:   "known keys",
 			prefix: "db",
 			values: map[string]string{
-				"db.url": "jdbc://${db.host}/${db.name:app}", "db.host": "h",
+				"db.url": "postgres://${db.host}/${db.name:app}", "db.host": "h",
 				"db.hosts": "a", "db.hosts[0]": "ignored", "db.labels.a.b": "1",
 				"other.key": "outside the prefix", "dbx.key": "outside the prefix",
 			},
@@ -754,6 +754,41 @@ func TestBind_Unknown(t *testing.T) {
 				t.Errorf("error\n%v\nwant\n%s", err, tt.expectedError)
 			}
 		})
+	}
+}
+
+func TestBind_SecretReferences(t *testing.T) {
+	t.Parallel()
+	type target struct {
+		Password gonf.Secret[string]
+		URL      string
+		Chain    string
+		Hosts    []string
+		Header   string
+		Fallback string `default:"${x.password}"`
+		Safe     gonf.Secret[string]
+		Plain    string
+	}
+	cfg := load(t, map[string]string{
+		"x.password": "s3cret",
+		"x.url":      "postgres://u:${x.password}@db/app",
+		"x.chain":    "${x.url}",
+		"x.hosts":    "a,${x.password}",
+		"x.header":   "Bearer ${api-token}",
+		"x.safe":     "${x.password}",
+		"x.plain":    "${other}",
+		"api-token":  "t0k3n",
+		"other":      "o",
+	}, nil)
+	_, err := gonf.Bind[target](cfg, "x")
+	expected := `gonf: bind "x": 5 problems:
+  x.url: refers to the secret x.password, make the field a gonf.Secret (from file:app.properties)
+  x.chain: refers to the secret x.password, make the field a gonf.Secret (from file:app.properties)
+  x.hosts: refers to the secret x.password, make the field a gonf.Secret (from file:app.properties)
+  x.header: refers to the secret api-token, make the field a gonf.Secret (from file:app.properties)
+  x.fallback: refers to the secret x.password, make the field a gonf.Secret`
+	if err == nil || err.Error() != expected {
+		t.Errorf("err = %v, want\n%s", err, expected)
 	}
 }
 

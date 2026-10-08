@@ -24,7 +24,7 @@ func parse(content string) (map[string]string, error) {
 func TestFormat(t *testing.T) {
 	t.Parallel()
 	got, err := dotenv.Format.Parse(".env", []byte(`# comment
-DB_URL=jdbc:postgresql://localhost/app
+DB_URL=postgres://localhost/app
 export DB_USER = app
 TRAILING=value   # comment
 HASH=a#b

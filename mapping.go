@@ -9,7 +9,7 @@ import (
 )
 
 // Mapping is the configuration of one module, bound to the keys under a
-// prefix, like a @ConfigMapping in Quarkus. A library declares it once:
+// prefix. A library declares it once:
 //
 //	var Mapping = gonf.NewMapping[Config]("db")
 //
@@ -119,8 +119,11 @@ func (c *Config) bindMappings(mappings []AnyMapping) error {
 	c.secrets = map[string]struct{}{}
 	c.defaults = map[string]Value{}
 	c.read = map[string]struct{}{}
-	for i, b := range binders {
+	for _, b := range binders {
 		c.remember(b)
+	}
+	for i, b := range binders {
+		b.checkSecretReferences()
 		if err := b.err(); err != nil {
 			errs = append(errs, err)
 			continue

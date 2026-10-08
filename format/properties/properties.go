@@ -1,4 +1,4 @@
-// Package properties provides the Java .properties format for gonf.
+// Package properties provides the .properties format for gonf.
 package properties
 
 import (
@@ -12,10 +12,10 @@ import (
 	"github.com/efuturetoday/gonf/source"
 )
 
-// Format is the Java .properties format (UTF-8).
+// Format is the .properties format (UTF-8).
 var Format source.Format = source.FormatFunc(parseProperties)
 
-// parseProperties parses the Java .properties format (UTF-8):
+// parseProperties parses the .properties format (UTF-8):
 // "key=value", "key: value" or "key value"; comments start with # or !;
 // a trailing backslash continues the line. Duplicate keys: last wins.
 func parseProperties(name string, data []byte) (map[string]gonf.Value, error) {
@@ -128,7 +128,7 @@ func unescapeProperties(s string) (string, error) {
 			}
 			b.WriteRune(r)
 		default:
-			// Unknown escapes yield the character itself, as in Java.
+			// Unknown escapes yield the character itself.
 			r, size := utf8.DecodeRuneInString(s[i:])
 			b.WriteRune(r)
 			i += size - 1

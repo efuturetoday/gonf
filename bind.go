@@ -63,11 +63,16 @@ import (
 // is validated; inner structs come first. A key under prefix that no field
 // binds, such as a typo "db.pool.max-szie", is an error naming the closest
 // known key; AllowUnknown turns this check off. A key that a bound value
-// references, such as db.host in db.url=jdbc:postgresql://${db.host}/app,
+// references, such as db.host in db.url=postgres://${db.host}/app,
 // is known. The check is skipped for an empty prefix and for environment
 // variable names such as DB_POOL_MAX_SIZ, which cannot be told apart from
 // variables for other programs. Finally, the validator given with
 // WithValidator checks the whole struct.
+//
+// A field that is no Secret but whose value or default refers to a secret
+// key, as in url=postgres://app:${db.password}@db/app, is a problem: the
+// field would hold the secret and print it. Make the field a Secret too.
+// Secret keys are those that Explain masks.
 //
 // A field type or tag that Bind cannot read, such as a func field or a
 // default for a struct, is a problem even inside an optional struct or a
@@ -83,6 +88,7 @@ func Bind[T any](c *Config, prefix string, opts ...BindOption) (T, error) {
 	}
 	b := c.bindRoot(prefix, m, v, opts)
 	checkUnknown([]*binder{b})
+	b.checkSecretReferences()
 	if err := b.err(); err != nil {
 		var zero T
 		return zero, err
@@ -211,16 +217,47 @@ type binder struct {
 	known map[string]struct{}
 	open  []string
 	// referenced holds the keys that ${...} expressions resolved, such as
-	// db.host in db.url=jdbc:postgresql://${db.host}/app.
+	// db.host in db.url=postgres://${db.host}/app; references holds them
+	// with the key whose value referred to them, in the order of binding.
 	referenced map[string]struct{}
+	references []reference
 	// secrets holds the keys of fields that hold a Secret, defaults the
 	// default tags by key.
 	secrets  map[string]struct{}
 	defaults map[string]string
 }
 
-func (b *binder) reference(key string) {
-	b.referenced[key] = struct{}{}
+// reference is a key that the value of another key refers to with ${...}.
+type reference struct {
+	from, to string
+}
+
+// referencesOf returns the function that records the keys that the value
+// of key refers to.
+func (b *binder) referencesOf(key string) func(to string) {
+	return func(to string) {
+		b.referenced[to] = struct{}{}
+		b.references = append(b.references, reference{from: key, to: to})
+	}
+}
+
+// checkSecretReferences reports every key that is no Secret but whose
+// value refers to a secret key: the field would hold the secret and print
+// it. Secret keys are those of Explain, so it runs after all binders of a
+// Load have recorded their Secrets.
+func (b *binder) checkSecretReferences() {
+	reported := map[string]bool{}
+	for _, r := range b.references {
+		_, isSecretField := b.secrets[r.from]
+		_, isSecretTarget := b.secrets[r.to]
+		isSecretTarget = isSecretTarget || b.c.isSecret(r.to)
+		if isSecretField || !isSecretTarget || reported[r.from] {
+			continue
+		}
+		reported[r.from] = true
+		v, _ := b.c.Lookup(r.from)
+		b.fail(r.from, v.Origin, fmt.Errorf("refers to the secret %s, make the field a gonf.Secret", r.to))
+	}
 }
 
 // validator is implemented by structs that check themselves after Bind.
@@ -247,7 +284,7 @@ func (b *binder) value(key string) (string, Origin, bool, error) {
 	if !ok {
 		return "", Origin{}, false, nil
 	}
-	s, err := b.c.expand(key, v.Raw, b.reference)
+	s, err := b.c.expand(key, v.Raw, b.referencesOf(key))
 	if err != nil {
 		return "", v.Origin, false, err
 	}
@@ -314,7 +351,7 @@ func (b *binder) bindScalar(key string, f field, v reflect.Value) {
 	case f.def == nil:
 		return
 	}
-	s, err = b.c.expand(key, *f.def, b.reference)
+	s, err = b.c.expand(key, *f.def, b.referencesOf(key))
 	if err != nil {
 		b.fail(key, Origin{}, fmt.Errorf("default: %w", err))
 		return
@@ -359,7 +396,7 @@ func (b *binder) bindSlice(key string, f field, v reflect.Value) {
 	if f.def == nil {
 		return
 	}
-	s, err = b.c.expand(key, *f.def, b.reference)
+	s, err = b.c.expand(key, *f.def, b.referencesOf(key))
 	if err != nil {
 		b.fail(key, Origin{}, fmt.Errorf("default: %w", err))
 		return
@@ -635,8 +672,8 @@ func (cs converters) convert(s string, v reflect.Value) error {
 }
 
 // checkLeadingZero reports an integer such as 0644 as ambiguous: Go reads it
-// as octal, SmallRye (Integer.valueOf) as decimal. Without the leading zero
-// or with a prefix (0o644) it is clear.
+// as octal, many other tools as decimal. Without the leading zero or with a
+// prefix (0o644) it is clear.
 func checkLeadingZero(s string) error {
 	sign, digits := "", s
 	if s != "" && (s[0] == '+' || s[0] == '-') {
@@ -661,8 +698,8 @@ func numberError(s string, t reflect.Type, err error) error {
 	return fmt.Errorf("invalid %s %q", t, s)
 }
 
-// parseBool is stricter than SmallRye, which reads every unknown value as
-// false, so a typo such as "ture" is an error here.
+// parseBool reports an unknown value such as the typo "ture" as an error
+// rather than reading it as false.
 func parseBool(s string) (bool, error) {
 	switch strings.ToLower(s) {
 	case "true", "1", "yes", "on":
@@ -759,8 +796,8 @@ func splitList(s string) []string {
 }
 
 // kebab converts a Go field name to a key: MaxSize becomes max-size,
-// HTTPPort http-port, URL url and IPV6Addr ipv6-addr. The rules follow
-// SmallRye's StringUtil.skewer; like there, IPv6Addr becomes i-pv6-addr.
+// HTTPPort http-port, URL url and IPV6Addr ipv6-addr. IPv6Addr becomes
+// i-pv6-addr; give such a field a cfg tag.
 func kebab(name string) string {
 	r := []rune(name)
 	var b strings.Builder

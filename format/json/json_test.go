@@ -8,7 +8,7 @@ import (
 func TestParseJSON(t *testing.T) {
 	t.Parallel()
 	input := `{
-		"db": {"url": "jdbc:x", "pool": {"max-size": 10, "ratio": 0.5}},
+		"db": {"url": "postgres://x", "pool": {"max-size": 10, "ratio": 0.5}},
 		"tags": ["a", "b"],
 		"servers": [{"host": "h1"}, {"host": "h2"}],
 		"enabled": true,
@@ -30,7 +30,7 @@ func TestParseJSON(t *testing.T) {
 		}
 	}
 	expected := map[string]string{
-		"db.url":           "jdbc:x",
+		"db.url":           "postgres://x",
 		"db.pool.max-size": "10",
 		"db.pool.ratio":    "0.5",
 		"tags[0]":          "a",

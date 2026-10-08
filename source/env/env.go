@@ -35,7 +35,7 @@ func (s *envSource) MapKey(key string) string { return MapKey(key) }
 // MapKey returns the environment variable name for key: letters upper case,
 // digits kept, every other character replaced by '_'. "db.pool.max-size"
 // becomes "DB_POOL_MAX_SIZE", "%dev.db.url" becomes "_DEV_DB_URL" and
-// "hosts[0]" becomes "HOSTS_0_", as in SmallRye Config. Pass it to
+// "hosts[0]" becomes "HOSTS_0_". Pass it to
 // source.WithKeyMapper for other Sources with environment-style keys.
 func MapKey(key string) string {
 	var b strings.Builder

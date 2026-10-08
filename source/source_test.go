@@ -88,11 +88,11 @@ func TestNew_ParseError(t *testing.T) {
 
 func TestNew_StripsBOM(t *testing.T) {
 	t.Parallel()
-	got, err := source.New("x:bom", static("\xEF\xBB\xBFdb.url=jdbc:x"), keyValue).Load(context.Background())
+	got, err := source.New("x:bom", static("\xEF\xBB\xBFdb.url=postgres://x"), keyValue).Load(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got["db.url"].Raw != "jdbc:x" {
+	if got["db.url"].Raw != "postgres://x" {
 		t.Errorf("db.url = %q", got["db.url"].Raw)
 	}
 }

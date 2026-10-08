@@ -44,7 +44,7 @@ func main() {
 	}
 	cfg, err := boot.Load(context.Background(),
 		boot.WithFS(defaults),
-		boot.With(gonf.WithMappings(dbMapping)),
+		boot.WithMappings(dbMapping),
 	)
 	if err != nil {
 		log.Fatal(err)

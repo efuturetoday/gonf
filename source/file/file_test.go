@@ -33,7 +33,7 @@ func TestNew(t *testing.T) {
 		key         string
 		expectedRaw string
 	}{
-		{name: "properties", path: write("app.properties", "db.url=jdbc:x\n"), format: properties.Format, key: "db.url", expectedRaw: "jdbc:x"},
+		{name: "properties", path: write("app.properties", "db.url=postgres://x\n"), format: properties.Format, key: "db.url", expectedRaw: "postgres://x"},
 		{name: "json", path: write("app.json", `{"a":{"b":1}}`), format: json.Format, key: "a.b", expectedRaw: "1"},
 	}
 	for _, tt := range tests {

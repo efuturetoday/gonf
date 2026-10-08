@@ -16,7 +16,7 @@ import (
 )
 
 type described struct {
-	URL      string `desc:"JDBC-like URL."`
+	URL      string `desc:"Address of the database."`
 	Password gonf.Secret[string]
 	APIToken string        `default:"dev"`
 	Timeout  time.Duration `default:"5s" desc:"Wait | then fail."`
@@ -49,7 +49,7 @@ func TestDescribe(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := []gonf.Property{
-		{Key: "db.url", Env: "DB_URL", Type: "string", Required: true, Doc: "JDBC-like URL."},
+		{Key: "db.url", Env: "DB_URL", Type: "string", Required: true, Doc: "Address of the database."},
 		{Key: "db.password", Env: "DB_PASSWORD", Type: "string", Required: true, Secret: true},
 		{Key: "db.api-token", Env: "DB_API_TOKEN", Type: "string", Default: "****", Secret: true},
 		{Key: "db.timeout", Env: "DB_TIMEOUT", Type: "time.Duration", Default: "5s", Doc: "Wait | then fail."},
@@ -174,7 +174,7 @@ func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk ful
 func TestWriteMarkdown(t *testing.T) {
 	t.Parallel()
 	props := []gonf.Property{
-		{Key: "db.url", Env: "DB_URL", Type: "string", Required: true, Doc: "JDBC-like\nURL."},
+		{Key: "db.url", Env: "DB_URL", Type: "string", Required: true, Doc: "Address of the\ndatabase."},
 		{Key: "db.password", Type: "string", Default: "****", Secret: true},
 		{Key: "db.sep", Type: "string", Default: "a|`b`"},
 	}
@@ -184,7 +184,7 @@ func TestWriteMarkdown(t *testing.T) {
 	}
 	expected := "| Key | Environment variable | Type | Default | Description |\n" +
 		"| --- | --- | --- | --- | --- |\n" +
-		"| `db.url` | `DB_URL` | `string` | required | JDBC-like URL. |\n" +
+		"| `db.url` | `DB_URL` | `string` | required | Address of the database. |\n" +
 		"| `db.password` |  | `string` (secret) | `****` |  |\n" +
 		"| `db.sep` |  | `string` | `` a\\|`b` `` |  |\n"
 	if b.String() != expected {

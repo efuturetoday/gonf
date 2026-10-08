@@ -2,6 +2,9 @@ package gonf_test
 
 import (
 	"errors"
+	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -17,6 +20,15 @@ type explainDB struct {
 	}
 	Name  string              `default:"app"`
 	Token gonf.Secret[string] `default:"dflt"`
+}
+
+// explainLocation is the Location of the defaults of explainMapping.
+var explainMapping, explainLocation = gonf.NewMapping[explainDB]("db"), callerLine()
+
+// callerLine returns file:line of its caller.
+func callerLine() string {
+	_, file, line, _ := runtime.Caller(1)
+	return filepath.Base(file) + ":" + strconv.Itoa(line)
 }
 
 func explainConfig(t *testing.T) *gonf.Config {
@@ -35,7 +47,7 @@ func explainConfig(t *testing.T) *gonf.Config {
 		"DB_PASSWORD":      "env-pw",
 		"DB_POOL_MAX_SIZE": "20",
 		"PATH":             "/bin",
-	}, gonf.WithProfiles("dev"), gonf.WithMappings(gonf.NewMapping[explainDB]("db")))
+	}, gonf.WithProfiles("dev"), gonf.WithMappings(explainMapping))
 }
 
 func TestConfig_Explain(t *testing.T) {
@@ -73,26 +85,26 @@ func TestConfig_Explain(t *testing.T) {
 			name:           "env overrides default",
 			key:            "db.pool.max-size",
 			expectedValue:  "20",
-			expectedString: "db.pool.max-size = 20 (test:upper)\n  default 10 (mapping:db)",
+			expectedString: "db.pool.max-size = 20 (test:upper)\n  default 10 (<loc>)",
 		},
 		{
 			name:           "default only",
 			key:            "db.name",
 			expectedValue:  "app",
-			expectedString: "db.name = app (mapping:db)",
+			expectedString: "db.name = app (default, <loc>)",
 		},
 		{
 			name:           "empty value uses default",
 			key:            "db.user",
 			expectedValue:  "admin",
-			expectedString: `db.user = admin (mapping:db)` + "\n" + `  empty "" (file:app.properties)`,
+			expectedString: `db.user = admin (default, <loc>)` + "\n" + `  empty "" (file:app.properties)`,
 		},
 		{
 			name:           "secret default",
 			key:            "db.token",
 			expectedValue:  "****",
 			expectedSecret: true,
-			expectedString: "db.token = **** (mapping:db)",
+			expectedString: "db.token = **** (default, <loc>)",
 		},
 		{
 			name:           "secret by name",
@@ -120,8 +132,10 @@ func TestConfig_Explain(t *testing.T) {
 			if e.Key != tt.key || e.Value != tt.expectedValue || e.IsSecret != tt.expectedSecret {
 				t.Errorf("Explain = %+v", e)
 			}
-			if got := e.String(); got != tt.expectedString {
-				t.Errorf("String =\n%s\nwant\n%s", got, tt.expectedString)
+			// <loc> stands for the Location of the defaults.
+			expected := strings.ReplaceAll(tt.expectedString, "<loc>", explainLocation)
+			if got := e.String(); got != expected {
+				t.Errorf("String =\n%s\nwant\n%s", got, expected)
 			}
 			if tt.expectedErr != nil && !errors.Is(e.Err, tt.expectedErr) {
 				t.Errorf("Err = %v, want %v", e.Err, tt.expectedErr)

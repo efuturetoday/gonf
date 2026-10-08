@@ -4,8 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
+	"strconv"
 )
 
 // Mapping is the configuration of one module, bound to the keys under a
@@ -18,6 +22,8 @@ import (
 type Mapping[T any] struct {
 	prefix string
 	opts   []MappingOption
+	// location is where NewMapping was called, the Location of defaults.
+	location string
 }
 
 // NewMapping returns a Mapping of T, which must be a struct, to the keys
@@ -87,8 +93,27 @@ type Mapping[T any] struct {
 //
 // All problems are collected; Load returns those of every Mapping
 // together, each Mapping's as a *BindError.
+//
+// Defaults come from the Source "mapping:" + prefix; their Location is the
+// file and line of the call to NewMapping, relative to the working
+// directory if below it.
 func NewMapping[T any](prefix string, opts ...MappingOption) *Mapping[T] {
-	return &Mapping[T]{prefix: prefix, opts: slices.Clone(opts)}
+	return &Mapping[T]{prefix: prefix, opts: slices.Clone(opts), location: callerLocation()}
+}
+
+// callerLocation returns file:line of the caller of the caller, relative
+// to the working directory if below it, or "" if unknown.
+func callerLocation() string {
+	_, file, line, ok := runtime.Caller(2)
+	if !ok {
+		return ""
+	}
+	if wd, err := os.Getwd(); err == nil {
+		if rel, err := filepath.Rel(wd, file); err == nil && filepath.IsLocal(rel) {
+			file = rel
+		}
+	}
+	return file + ":" + strconv.Itoa(line)
 }
 
 // Prefix returns the prefix of the Mapping's keys.
@@ -173,11 +198,17 @@ func (m *Mapping[T]) target() reflect.Type { return reflect.TypeFor[T]() }
 
 func (m *Mapping[T]) options() []MappingOption { return m.opts }
 
+func (m *Mapping[T]) origin() Origin {
+	return Origin{Source: "mapping:" + m.prefix, Location: m.location}
+}
+
 // AnyMapping is a *Mapping of any type, as accepted by WithMappings.
 type AnyMapping interface {
 	Prefix() string
 	target() reflect.Type
 	options() []MappingOption
+	// origin is the Origin of the Mapping's defaults.
+	origin() Origin
 }
 
 // WithMappings registers Mappings. Load binds and validates all of them and
@@ -210,7 +241,7 @@ func (c *Config) remember(b *binder) {
 	maps.Copy(c.read, b.referenced)
 	for key, def := range b.defaults {
 		if _, ok := c.defaults[key]; !ok {
-			c.defaults[key] = Value{Raw: def, Origin: Origin{Source: "mapping:" + b.prefix}}
+			c.defaults[key] = Value{Raw: def, Origin: b.origin}
 		}
 	}
 }
@@ -238,7 +269,7 @@ func (c *Config) bindMappings(mappings []AnyMapping) error {
 			continue
 		}
 		v := reflect.New(m.target()).Elem()
-		binders = append(binders, c.bindRoot(m.Prefix(), root, v, m.options()))
+		binders = append(binders, c.bindRoot(m, root, v))
 		values = append(values, v)
 		roots = append(roots, root)
 		bound = append(bound, m)

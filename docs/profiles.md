@@ -65,5 +65,5 @@ A profile name must not contain `.`, `,` or whitespace.
 ```
 app.port = 81 (file:config/app-prod.properties:1, profile prod)
   overrides 80 (file:config/app.properties:2, profile prod)
-  default 8080 (mapping:app)
+  default 8080 (main.go:14)
 ```

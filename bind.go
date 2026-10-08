@@ -14,20 +14,22 @@ import (
 	"unicode"
 )
 
-// bindRoot binds the struct v of model m to the keys under prefix and
-// validates it. It does not check for unknown keys; see checkUnknown. If m
-// has problems, it reports them and binds nothing.
-func (c *Config) bindRoot(prefix string, m *model, v reflect.Value, opts []MappingOption) *binder {
+// bindRoot binds the struct v of model m to the keys under the prefix of
+// mapping and validates it. It does not check for unknown keys; see
+// checkUnknown. If m has problems, it reports them and binds nothing.
+func (c *Config) bindRoot(mapping AnyMapping, m *model, v reflect.Value) *binder {
+	prefix := mapping.Prefix()
 	b := &binder{
 		c:          c,
 		cs:         c.converters,
 		prefix:     prefix,
+		origin:     mapping.origin(),
 		known:      map[string]struct{}{},
 		referenced: map[string]struct{}{},
 		secrets:    map[string]struct{}{},
 		defaults:   map[string]string{},
 	}
-	for _, opt := range opts {
+	for _, opt := range mapping.options() {
 		opt(&b.options)
 	}
 	if problems := m.problems(prefix); len(problems) > 0 {
@@ -128,6 +130,7 @@ type binder struct {
 	c        *Config
 	cs       converters
 	prefix   string
+	origin   Origin // of the defaults
 	options  bindOptions
 	problems []*Problem
 	// known holds the keys of the bound fields, open the prefixes of
@@ -284,7 +287,7 @@ func (b *binder) bindScalar(key string, f field, v reflect.Value) {
 	case f.def == nil:
 		return
 	}
-	s, err = b.c.expand(key, *f.def, Origin{Source: "mapping:" + b.prefix}, b.hooks(key))
+	s, err = b.c.expand(key, *f.def, b.origin, b.hooks(key))
 	if err != nil {
 		b.fail(key, Origin{}, fmt.Errorf("default: %w", err))
 		return
@@ -329,7 +332,7 @@ func (b *binder) bindSlice(key string, f field, v reflect.Value) {
 	if f.def == nil {
 		return
 	}
-	s, err = b.c.expand(key, *f.def, Origin{Source: "mapping:" + b.prefix}, b.hooks(key))
+	s, err = b.c.expand(key, *f.def, b.origin, b.hooks(key))
 	if err != nil {
 		b.fail(key, Origin{}, fmt.Errorf("default: %w", err))
 		return

@@ -10,16 +10,17 @@ fmt.Println(cfg.Explain("app.port"))
 ```
 app.port = 9000 (env:APP_PORT)
   overrides 80 (file:config/app.properties:2, profile prod)
-  default 8080 (mapping:app)
+  default 8080 (main.go:14)
 ```
 
 The first line is the value a Mapping binds and where it comes from: the
 Source, the file and line, and the profile. The lines below show what it
-overrides, highest first, and the default tag of the Mapping. Other lines:
+overrides, highest first, and the default tag of the Mapping with the file
+and line of its `gonf.NewMapping`. Other lines:
 
 | Line | Meaning |
 | --- | --- |
-| `app.port = 8080 (mapping:app)` | no Source has a value, the default applies |
+| `app.port = 8080 (default, main.go:14)` | no Source has a value, the default applies |
 | `empty "" (env:APP_PORT)` | a value is set but empty, so the default applies |
 | `app.url: gonf: key "app.url": unresolved reference "app.host"` | the value cannot be expanded; `value ...` lines follow |
 

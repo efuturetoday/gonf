@@ -30,7 +30,7 @@ type Explanation struct {
 	Candidates []Value
 	// Default is the default tag of a Mapping for the key, nil if there is
 	// none. Its Origin.Source is "mapping:" followed by the Mapping's
-	// prefix.
+	// prefix, its Origin.Location the file and line of NewMapping.
 	Default *Value
 	// Err is set if the key has neither a value nor a default, or its value
 	// cannot be expanded.
@@ -113,15 +113,20 @@ func (c *Config) Explanations() []Explanation {
 //
 //	db.url = postgres://prod/app (env:DB_URL)
 //	  overrides postgres://localhost/app (config/app.properties:3, profile dev)
-//	  default postgres://localhost/test (mapping:db)
+//	  default postgres://localhost/test (db/db.go:12)
 func (e Explanation) String() string {
 	var b strings.Builder
 	if e.Err != nil {
 		fmt.Fprintf(&b, "%s: %v", e.Key, e.Err)
-	} else {
-		fmt.Fprintf(&b, "%s = %s (%s)", e.Key, show(e.Value), where(e.Origin))
 	}
 	isDefaultUsed := e.Err == nil && e.Default != nil && e.Origin == e.Default.Origin
+	switch {
+	case e.Err != nil:
+	case isDefaultUsed:
+		fmt.Fprintf(&b, "%s = %s (default, %s)", e.Key, show(e.Value), where(e.Origin))
+	default:
+		fmt.Fprintf(&b, "%s = %s (%s)", e.Key, show(e.Value), where(e.Origin))
+	}
 	for i, v := range e.Candidates {
 		label := "overrides"
 		switch {

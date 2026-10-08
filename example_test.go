@@ -206,7 +206,7 @@ func ExampleConfig_Explanations() {
 	// app.dsn = postgres://app:****@prod/app (memory:overrides)
 	//   overrides postgres://app:${db.password}@localhost/app (file:app.properties)
 	// db.password = **** (file:app.properties)
-	// db.pool.max-size = 10 (mapping:db)
+	// db.pool.max-size = 10 (default, example_test.go:188)
 }
 
 func ExampleWithConverter() {

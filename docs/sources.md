@@ -62,7 +62,8 @@ Options for these Sources:
 line; `\uXXXX` escapes. Every value has its line as location.
 
 **JSON** (`format/json`): nested objects become `a.b`, arrays `a[0]`;
-numbers keep their text; `null` produces no key.
+numbers keep their text; `null` produces no key; a name twice in an object
+is an error; every value has its line as location.
 
 **YAML** (`github.com/efuturetoday/gonf/format/yaml`, a module of its own):
 names are joined like `.properties` keys, so `db.url: x` equals

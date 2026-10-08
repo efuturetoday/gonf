@@ -86,7 +86,7 @@ func TestFS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got["a"].Raw != "from-fs" || got["a"].Origin.Location != "fs:config/app.json" {
+	if got["a"].Raw != "from-fs" || got["a"].Origin.Location != "fs:config/app.json:1" {
 		t.Errorf("a = %+v", got["a"])
 	}
 

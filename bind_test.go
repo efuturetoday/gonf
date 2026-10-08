@@ -723,6 +723,12 @@ func TestBind_Unknown(t *testing.T) {
   db.skipped: unknown key (from file:app.properties)`,
 		},
 		{
+			name:          "too far for a suggestion",
+			prefix:        "db",
+			values:        map[string]string{"db.url": "u", "db.user": "x"},
+			expectedError: `gonf: bind "db": db.user: unknown key (from file:app.properties)`,
+		},
+		{
 			name:          "reported after binding problems",
 			prefix:        "db",
 			values:        map[string]string{"db.urll": "u"},

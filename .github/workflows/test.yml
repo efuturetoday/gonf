@@ -36,6 +36,7 @@ jobs:
           - { dir: ., name: FuzzBind }
           - { dir: source/env, name: FuzzMapKey }
           - { dir: format/dotenv, name: FuzzFormat }
+          - { dir: format/json, name: FuzzParseJSON }
           - { dir: format/properties, name: FuzzParseProperties }
           - { dir: format/yaml, name: FuzzFormat }
     steps:

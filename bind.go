@@ -498,7 +498,7 @@ func (b *binder) isKnown(key string) bool {
 
 // maxSuggestDistance is the largest edit distance between an unknown key
 // and a known key suggested for it.
-const maxSuggestDistance = 3
+const maxSuggestDistance = 2
 
 // suggest returns the known key closest to key, or "" if none is close.
 func (b *binder) suggest(key string) string {

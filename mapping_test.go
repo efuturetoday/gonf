@@ -55,6 +55,65 @@ func TestMapping_Get(t *testing.T) {
 	}
 }
 
+// copied has every kind of reference that Mapping.Get copies.
+type copied struct {
+	Hosts   []string
+	Labels  map[string]string
+	Port    *int
+	Servers []struct{ Tags []string }
+	Zones   map[string][]string
+	Next    *copiedNode
+	Plain   struct{ Name string }
+}
+
+type copiedNode struct {
+	Name string
+	Next *copiedNode
+}
+
+func TestMapping_Get_Copies(t *testing.T) {
+	t.Parallel()
+	m := gonf.NewMapping[copied]("x")
+	cfg := load(t, map[string]string{
+		"x.hosts":           "a,b",
+		"x.labels.env":      "prod",
+		"x.port":            "80",
+		"x.servers[0].tags": "t1,t2",
+		"x.zones.eu":        "z1,z2",
+		"x.next.name":       "n1",
+		"x.next.next.name":  "n2",
+		"x.plain.name":      "p",
+	}, nil, gonf.WithMappings(m))
+	// Bind fills a new value, which shares nothing with the Mapping.
+	expected, err := gonf.Bind[copied](cfg, "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := m.Get(cfg)
+	got.Hosts[0] = "changed"
+	got.Labels["env"] = "changed"
+	*got.Port = 1
+	got.Servers[0].Tags[0] = "changed"
+	got.Zones["eu"][0] = "changed"
+	got.Next.Name = "changed"
+	got.Next.Next.Name = "changed"
+	got.Plain.Name = "changed"
+
+	if again := m.Get(cfg); !reflect.DeepEqual(again, expected) {
+		t.Errorf("Get after modifying a copy = %+v, want %+v", again, expected)
+	}
+}
+
+func TestMapping_Get_NoCopyWithoutReferences(t *testing.T) {
+	// Not parallel: AllocsPerRun changes GOMAXPROCS.
+	m := gonf.NewMapping[benchDB]("db")
+	cfg := load(t, benchValues, nil, gonf.WithMappings(m))
+	if n := testing.AllocsPerRun(100, func() { _ = m.Get(cfg) }); n != 0 {
+		t.Errorf("Get allocates %v times, want 0", n)
+	}
+}
+
 func TestMapping_Get_NotRegistered(t *testing.T) {
 	t.Parallel()
 	cfg := load(t, nil, nil, gonf.WithMappings(gonf.NewMapping[cacheConfig]("cache")))
@@ -214,15 +273,28 @@ func TestWithValidator(t *testing.T) {
 }
 
 func BenchmarkMapping_Get(b *testing.B) {
-	db := gonf.NewMapping[benchDB]("db")
-	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(benchValues)), gonf.WithMappings(db))
+	b.Run("no references", func(b *testing.B) {
+		benchmarkGet(b, gonf.NewMapping[benchDB]("db"), benchValues)
+	})
+	b.Run("slice and map", func(b *testing.B) {
+		type hosts struct {
+			Hosts  []string
+			Labels map[string]string
+		}
+		benchmarkGet(b, gonf.NewMapping[hosts]("x"), map[string]string{"x.hosts": "a,b,c", "x.labels.env": "prod"})
+	})
+}
+
+func benchmarkGet[T any](b *testing.B, m *gonf.Mapping[T], values map[string]string) {
+	b.Helper()
+	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(values)), gonf.WithMappings(m))
 	if err != nil {
 		b.Fatal(err)
 	}
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_ = db.Get(cfg)
+			_ = m.Get(cfg)
 		}
 	})
 }

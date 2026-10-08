@@ -26,6 +26,12 @@ c := db.Mapping.Get(cfg)
 programming error; every configuration error is reported by `Load`. To bind
 a struct without registering it, call `gonf.Bind[Config](cfg, "db")`.
 
+`Get` binds nothing; it returns the value bound at `Load`. Slices, maps and
+pointers in it are copies, so changing them does not change what other
+callers get. A struct without them is returned as is, without any copy.
+Values of types with a converter or `UnmarshalText`, such as `*url.URL`,
+are shared and must not be changed.
+
 ## Names
 
 A field is bound to `prefix.name`, where the name is the field name in kebab

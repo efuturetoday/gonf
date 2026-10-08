@@ -29,17 +29,79 @@ func NewMapping[T any](prefix string, opts ...BindOption) *Mapping[T] {
 // Prefix returns the prefix of the Mapping's keys.
 func (m *Mapping[T]) Prefix() string { return m.prefix }
 
-// Get returns the value bound when c was loaded. Slices and maps in it are
-// shared between calls and must not be modified.
+// Get returns the value bound when c was loaded. Its pointers, slices and
+// maps are copies, so a caller may modify them without changing what other
+// callers get; a type without them costs no copy. Values of types with a
+// converter or UnmarshalText, such as *url.URL, are not copied and must
+// not be modified.
 //
 // Get panics if m was not passed to Load with WithMappings: that is a
 // programming error, while every configuration error is reported by Load.
 func (m *Mapping[T]) Get(c *Config) T {
-	v, ok := c.mappings[m].(T)
+	b := c.mappings[m]
+	v, ok := b.value.(T)
 	if !ok {
 		panic(fmt.Sprintf("gonf: mapping %q not registered, add it with gonf.WithMappings", m.prefix))
 	}
+	if !b.model.hasReferences {
+		return v
+	}
+	v, _ = reflect.TypeAssert[T](deepCopy(b.model, reflect.ValueOf(v)))
 	return v
+}
+
+// boundMapping is the value of a Mapping and the model it was bound by.
+type boundMapping struct {
+	value any
+	model *model
+}
+
+// deepCopy returns a copy of v, of model m, that shares no pointer, slice
+// or map that Bind filled.
+func deepCopy(m *model, v reflect.Value) reflect.Value {
+	if !m.hasReferences {
+		return v
+	}
+	switch m.kind {
+	case kindPointer:
+		if v.IsNil() {
+			return v
+		}
+		p := reflect.New(m.typ.Elem())
+		p.Elem().Set(deepCopy(m.elem, v.Elem()))
+		return p
+	case kindList:
+		if v.IsNil() {
+			return v
+		}
+		out := reflect.MakeSlice(m.typ, v.Len(), v.Len())
+		if !m.elem.hasReferences {
+			reflect.Copy(out, v)
+			return out
+		}
+		for i := range v.Len() {
+			out.Index(i).Set(deepCopy(m.elem, v.Index(i)))
+		}
+		return out
+	case kindMap:
+		if v.IsNil() {
+			return v
+		}
+		out := reflect.MakeMapWithSize(m.typ, v.Len())
+		for iter := v.MapRange(); iter.Next(); {
+			out.SetMapIndex(iter.Key(), deepCopy(m.elem, iter.Value()))
+		}
+		return out
+	default: // kindGroup
+		out := reflect.New(m.typ).Elem()
+		out.Set(v)
+		for _, f := range m.fields {
+			if f.m != nil && f.m.hasReferences {
+				out.FieldByIndex(f.index).Set(deepCopy(f.m, v.FieldByIndex(f.index)))
+			}
+		}
+		return out
+	}
 }
 
 func (m *Mapping[T]) target() reflect.Type { return reflect.TypeFor[T]() }
@@ -95,6 +157,7 @@ func (c *Config) bindMappings(mappings []AnyMapping) error {
 	var binders []*binder
 	var values []reflect.Value
 	var bound []AnyMapping
+	var roots []*model
 	var errs []error
 	for _, m := range mappings {
 		if m == nil {
@@ -112,10 +175,11 @@ func (c *Config) bindMappings(mappings []AnyMapping) error {
 		v := reflect.New(m.target()).Elem()
 		binders = append(binders, c.bindRoot(m.Prefix(), root, v, m.options()))
 		values = append(values, v)
+		roots = append(roots, root)
 		bound = append(bound, m)
 	}
 	checkUnknown(binders)
-	c.mappings = make(map[AnyMapping]any, len(bound))
+	c.mappings = make(map[AnyMapping]boundMapping, len(bound))
 	c.secrets = map[string]struct{}{}
 	c.defaults = map[string]Value{}
 	c.read = map[string]struct{}{}
@@ -128,7 +192,7 @@ func (c *Config) bindMappings(mappings []AnyMapping) error {
 			errs = append(errs, err)
 			continue
 		}
-		c.mappings[bound[i]] = values[i].Interface()
+		c.mappings[bound[i]] = boundMapping{value: values[i].Interface(), model: roots[i]}
 	}
 	return errors.Join(errs...)
 }

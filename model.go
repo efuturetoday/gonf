@@ -23,6 +23,9 @@ type model struct {
 	// isSecret reports whether the value is a Secret, also behind pointers
 	// and in lists.
 	isSecret bool
+	// hasReferences reports whether the value holds pointers, slices or
+	// maps that Bind fills, which a copy must not share.
+	hasReferences bool
 }
 
 // kind is how Bind reads a type.
@@ -86,10 +89,12 @@ func (f field) entry() field {
 // rootModel returns the model of t, which Bind binds to prefix, or an error
 // unless t is a struct.
 func (cs converters) rootModel(prefix string, t reflect.Type) (*model, error) {
-	m := (&modeler{cs: cs, models: map[reflect.Type]*model{}}).build(t)
+	mb := &modeler{cs: cs, models: map[reflect.Type]*model{}}
+	m := mb.build(t)
 	if m.kind != kindGroup {
 		return nil, fmt.Errorf("gonf: bind %q: %s is not a struct", prefix, t)
 	}
+	mb.findReferences()
 	return m, nil
 }
 
@@ -131,6 +136,28 @@ func (mb *modeler) build(t reflect.Type) *model {
 		m.err = fmt.Errorf("unsupported type %s, it contains itself", t)
 	}
 	return m
+}
+
+// findReferences sets hasReferences of every model built. A group has
+// references if a field has; recursive types need several rounds.
+func (mb *modeler) findReferences() {
+	for isChanged := true; isChanged; {
+		isChanged = false
+		for _, m := range mb.models {
+			if m.hasReferences {
+				continue
+			}
+			switch m.kind {
+			case kindPointer, kindList, kindMap:
+				m.hasReferences = true
+			case kindGroup:
+				m.hasReferences = slices.ContainsFunc(m.fields, func(f field) bool {
+					return f.m != nil && f.m.hasReferences
+				})
+			}
+			isChanged = isChanged || m.hasReferences
+		}
+	}
 }
 
 // containsItself reports whether the elements of m lead back to m without

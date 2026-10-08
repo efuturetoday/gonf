@@ -56,7 +56,7 @@ func (c *Config) expand(key, s string, origin Origin, h hooks) (string, error) {
 type hooks struct {
 	// call resolves a ${name::arg} expression in the value of key; origin
 	// is where the expression is written. It must not be nil. A plain
-	// function, not a method value, keeps Get free of allocations.
+	// function, not a method value, keeps Get from allocating it.
 	call func(c *Config, key, name, arg string, origin Origin) (string, error)
 	// reference is called with every key that a ${key} expression
 	// resolved. If it returns ok, replacement is used instead of the

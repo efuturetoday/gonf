@@ -23,7 +23,7 @@ type Config struct {
 	handlers   map[string]SecretHandler
 	// mappings holds the bound value of every Mapping given with
 	// WithMappings.
-	mappings map[AnyMapping]any
+	mappings map[AnyMapping]boundMapping
 	// secrets holds the keys that Mappings bind to a Secret, defaults the
 	// default tags of the Mappings, read every key the Mappings bound or
 	// referenced.

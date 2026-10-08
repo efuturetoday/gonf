@@ -104,7 +104,7 @@ func (c *Config) bindMappings(mappings []AnyMapping) error {
 		if slices.Contains(bound, m) {
 			continue
 		}
-		if err := checkTarget(m.Prefix(), m.target()); err != nil {
+		if err := c.converters.checkTarget(m.Prefix(), m.target()); err != nil {
 			errs = append(errs, err)
 			continue
 		}

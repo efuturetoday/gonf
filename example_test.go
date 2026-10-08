@@ -3,6 +3,7 @@ package gonf_test
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/efuturetoday/gonf"
@@ -203,4 +204,23 @@ func ExampleConfig_Explanations() {
 	// db.pool.max-size = 10 (mapping:db)
 	// db.url = postgres://app:****@prod/app (memory:overrides)
 	//   overrides postgres://app:${db.password}@localhost/app (file:app.properties)
+}
+
+func ExampleWithConverter() {
+	type API struct {
+		Endpoint *url.URL
+	}
+	cfg, err := gonf.Load(context.Background(),
+		gonf.WithConverter(url.Parse),
+		gonf.WithSources(memory.New(map[string]string{"api.endpoint": "https://example.com/v1"})),
+	)
+	if err != nil {
+		panic(err)
+	}
+	api, err := gonf.Bind[API](cfg, "api")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(api.Endpoint.Host, api.Endpoint.Path)
+	// Output: example.com /v1
 }

@@ -35,6 +35,8 @@ import (
 //     and on/off in any case
 //   - time.Duration in the format of time.ParseDuration, such as 5s or 1h30m
 //   - any type whose pointer implements encoding.TextUnmarshaler
+//   - any type with a converter given with WithConverter, which replaces
+//     the rules above
 //   - Secret[T] of any of these types
 //   - structs, bound to the keys under prefix.name; an embedded struct
 //     without a cfg tag is bound to the keys of its parent
@@ -67,7 +69,7 @@ import (
 func Bind[T any](c *Config, prefix string, opts ...BindOption) (T, error) {
 	var out T
 	v := reflect.ValueOf(&out).Elem()
-	if err := checkTarget(prefix, v.Type()); err != nil {
+	if err := c.converters.checkTarget(prefix, v.Type()); err != nil {
 		return out, err
 	}
 	b := c.bindRoot(prefix, v, opts)
@@ -80,8 +82,8 @@ func Bind[T any](c *Config, prefix string, opts ...BindOption) (T, error) {
 }
 
 // checkTarget reports an error unless t is a struct Bind can bind.
-func checkTarget(prefix string, t reflect.Type) error {
-	if t.Kind() != reflect.Struct || isScalar(t) {
+func (cs converters) checkTarget(prefix string, t reflect.Type) error {
+	if t.Kind() != reflect.Struct || cs.isScalar(t) {
 		return fmt.Errorf("gonf: bind %q: %s is not a struct", prefix, t)
 	}
 	return nil
@@ -92,6 +94,7 @@ func checkTarget(prefix string, t reflect.Type) error {
 func (c *Config) bindRoot(prefix string, v reflect.Value, opts []BindOption) *binder {
 	b := &binder{
 		c:          c,
+		cs:         c.converters,
 		prefix:     prefix,
 		known:      map[string]struct{}{},
 		referenced: map[string]struct{}{},
@@ -191,6 +194,7 @@ var (
 // binder binds the fields of one Bind call and collects its problems.
 type binder struct {
 	c        *Config
+	cs       converters
 	prefix   string
 	options  bindOptions
 	problems []*Problem
@@ -253,10 +257,10 @@ func (b *binder) bind(key string, def *string, v reflect.Value) {
 		b.defaults[key] = *def
 	}
 	switch {
-	case isScalar(t):
-		b.bindScalar(key, def, v)
 	case t.Kind() == reflect.Pointer:
 		b.bindPointer(key, def, v)
+	case b.cs.isScalar(t):
+		b.bindScalar(key, def, v)
 	case t.Kind() == reflect.Slice:
 		b.bindSlice(key, def, v)
 	case isSecret(t):
@@ -276,7 +280,7 @@ func (b *binder) bind(key string, def *string, v reflect.Value) {
 // problems.
 func (b *binder) bindStruct(prefix string, v reflect.Value) {
 	before := len(b.problems)
-	for _, f := range fields(v.Type()) {
+	for _, f := range b.cs.fields(v.Type()) {
 		key := join(prefix, f.name)
 		if f.isEmbeddedPointer {
 			b.fail(key, Origin{}, fmt.Errorf("embedded pointer %s not supported, embed the struct", f.typ))
@@ -301,7 +305,7 @@ func (b *binder) bindScalar(key string, def *string, v reflect.Value) {
 		return
 	}
 	if ok {
-		if err := convert(s, v); err != nil {
+		if err := b.cs.convert(s, v); err != nil {
 			b.fail(key, origin, err)
 		}
 		return
@@ -318,17 +322,22 @@ func (b *binder) bindScalar(key string, def *string, v reflect.Value) {
 	if s == "" {
 		return
 	}
-	if err := convert(s, v); err != nil {
+	if err := b.cs.convert(s, v); err != nil {
 		b.fail(key, Origin{}, fmt.Errorf("default: %w", err))
 	}
 }
 
-// bindPointer leaves v nil unless key has a value or a default.
+// bindPointer leaves v nil unless key has a value or a default. A pointer
+// type with a converter is converted as a whole.
 func (b *binder) bindPointer(key string, def *string, v reflect.Value) {
-	elem := v.Type().Elem()
-	if def == nil && !b.present(key, elem, nil) {
+	if def == nil && !b.present(key, v.Type(), nil) {
 		return
 	}
+	if _, ok := b.cs[v.Type()]; ok {
+		b.bindScalar(key, def, v)
+		return
+	}
+	elem := v.Type().Elem()
 	p := reflect.New(elem)
 	b.bind(key, def, p.Elem())
 	v.Set(p)
@@ -367,7 +376,7 @@ func (b *binder) bindSlice(key string, def *string, v reflect.Value) {
 // bindList binds the comma-separated list s to the slice v.
 func (b *binder) bindList(key, s string, origin Origin, v reflect.Value) {
 	elem := v.Type().Elem()
-	if !isScalar(elem) {
+	if !b.cs.isScalar(elem) {
 		err := fmt.Errorf("comma-separated value for a list of %s, use indexed keys such as %s", elem, index(key, 0))
 		b.fail(key, origin, err)
 		return
@@ -378,7 +387,7 @@ func (b *binder) bindList(key, s string, origin Origin, v reflect.Value) {
 	}
 	out := reflect.MakeSlice(v.Type(), len(parts), len(parts))
 	for i, part := range parts {
-		if err := convert(part, out.Index(i)); err != nil {
+		if err := b.cs.convert(part, out.Index(i)); err != nil {
 			b.fail(key, origin, fmt.Errorf("element %d: %w", i, err))
 		}
 	}
@@ -387,11 +396,11 @@ func (b *binder) bindList(key, s string, origin Origin, v reflect.Value) {
 
 func (b *binder) bindMap(key string, v reflect.Value) {
 	t := v.Type()
-	if !isScalar(t.Key()) {
+	if !b.cs.isScalar(t.Key()) {
 		b.fail(key, Origin{}, fmt.Errorf("unsupported map key type %s", t.Key()))
 		return
 	}
-	isGroupValue := isGroup(t.Elem())
+	isGroupValue := b.cs.isGroup(t.Elem())
 	prefix := key + "."
 	b.open = append(b.open, prefix)
 	var names []string
@@ -411,7 +420,7 @@ func (b *binder) bindMap(key string, v reflect.Value) {
 			continue
 		}
 		mk := reflect.New(t.Key()).Elem()
-		if err := convert(unquote(name), mk); err != nil {
+		if err := b.cs.convert(unquote(name), mk); err != nil {
 			b.fail(entry, Origin{}, fmt.Errorf("map key: %w", err))
 			continue
 		}
@@ -531,11 +540,11 @@ func (b *binder) indices(key string, elem reflect.Type) []int {
 // by one, so environment variables count too. stack holds the struct types
 // being checked and stops recursive types.
 func (b *binder) present(key string, t reflect.Type, stack []reflect.Type) bool {
-	for t.Kind() == reflect.Pointer {
+	for t.Kind() == reflect.Pointer && !b.cs.isScalar(t) {
 		t = t.Elem()
 	}
 	switch {
-	case isScalar(t):
+	case b.cs.isScalar(t):
 		_, _, ok, err := b.value(key)
 		return ok || err != nil
 	case t.Kind() == reflect.Struct:
@@ -546,7 +555,7 @@ func (b *binder) present(key string, t reflect.Type, stack []reflect.Type) bool 
 			return false
 		}
 		stack = append(stack, t)
-		for _, f := range fields(t) {
+		for _, f := range b.cs.fields(t) {
 			if !f.isEmbeddedPointer && b.present(join(key, f.name), f.typ, stack) {
 				return true
 			}
@@ -577,7 +586,7 @@ type structField struct {
 
 // fields returns the fields of struct type t, with embedded structs
 // flattened.
-func fields(t reflect.Type) []structField {
+func (cs converters) fields(t reflect.Type) []structField {
 	var out []structField
 	for i := range t.NumField() {
 		f := t.Field(i)
@@ -587,8 +596,8 @@ func fields(t reflect.Type) []structField {
 		}
 		if f.Anonymous && !hasTag {
 			switch {
-			case f.Type.Kind() == reflect.Struct && !isScalar(f.Type):
-				for _, sub := range fields(f.Type) {
+			case f.Type.Kind() == reflect.Struct && !cs.isScalar(f.Type):
+				for _, sub := range cs.fields(f.Type) {
 					sub.index = append([]int{i}, sub.index...)
 					out = append(out, sub)
 				}
@@ -614,11 +623,19 @@ func fields(t reflect.Type) []structField {
 }
 
 // convert parses s into v, which must be addressable and of a scalar type.
-func convert(s string, v reflect.Value) error {
+func (cs converters) convert(s string, v reflect.Value) error {
 	t := v.Type()
+	if fn, ok := cs[t]; ok {
+		out, err := fn(s)
+		if err != nil {
+			return fmt.Errorf("invalid %s %q: %w", t, s, err)
+		}
+		v.Set(out)
+		return nil
+	}
 	if sec, ok := v.Addr().Interface().(secret); ok {
 		inner := reflect.New(sec.secretType()).Elem()
-		if err := convert(s, inner); err != nil {
+		if err := cs.convert(s, inner); err != nil {
 			return fmt.Errorf("invalid %s, value hidden", inner.Type())
 		}
 		sec.setSecret(inner)
@@ -692,9 +709,12 @@ func parseBool(s string) (bool, error) {
 
 // isScalar reports whether a value of type t is converted from a single
 // string.
-func isScalar(t reflect.Type) bool {
+func (cs converters) isScalar(t reflect.Type) bool {
+	if _, ok := cs[t]; ok {
+		return true
+	}
 	if isSecret(t) {
-		return isScalar(secretElem(t))
+		return cs.isScalar(secretElem(t))
 	}
 	if isText(t) || t == durationType {
 		return true
@@ -715,15 +735,15 @@ func isText(t reflect.Type) bool {
 
 // isGroup reports whether values of type t live under several keys, so that
 // a map entry of type t is named by one key segment only.
-func isGroup(t reflect.Type) bool {
-	for t.Kind() == reflect.Pointer {
+func (cs converters) isGroup(t reflect.Type) bool {
+	for t.Kind() == reflect.Pointer && !cs.isScalar(t) {
 		t = t.Elem()
 	}
 	switch {
-	case isScalar(t):
+	case cs.isScalar(t):
 		return false
 	case t.Kind() == reflect.Slice:
-		return isGroup(t.Elem())
+		return cs.isGroup(t.Elem())
 	}
 	return t.Kind() == reflect.Struct || t.Kind() == reflect.Map
 }

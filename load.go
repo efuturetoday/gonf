@@ -17,6 +17,7 @@ type loadOptions struct {
 	profileKey string
 	mappings   []AnyMapping
 	validator  func(v any) error
+	converters []converter
 }
 
 // WithSources adds Sources. Can be passed multiple times; the order of
@@ -81,6 +82,10 @@ func Load(ctx context.Context, opts ...Option) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gonf: %w", err)
 	}
+	cs, err := newConverters(o.converters)
+	if err != nil {
+		return nil, err
+	}
 
 	loaded, err := loadSources(ctx, o.sources)
 	if err != nil {
@@ -92,14 +97,14 @@ func Load(ctx context.Context, opts ...Option) (*Config, error) {
 		}
 	}
 	cfg := newConfig(loaded, profiles)
-	cfg.validator = o.validator
+	cfg.validator, cfg.converters = o.validator, cs
 	if len(o.factories) > 0 {
 		late, err := runFactories(ctx, o.factories, cfg)
 		if err != nil {
 			return nil, err
 		}
 		cfg = newConfig(append(loaded, late...), profiles)
-		cfg.validator = o.validator
+		cfg.validator, cfg.converters = o.validator, cs
 	}
 	if err := cfg.bindMappings(o.mappings); err != nil {
 		return nil, err

@@ -7,3 +7,6 @@
 # Claude Code skills of the maintainers (installed locally, see skills-lock.json)
 /.claude/skills/
 /skills-lock.json
+
+# Binary of go build ./cmd/gonf
+/cmd/gonf/gonf

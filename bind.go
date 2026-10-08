@@ -57,31 +57,49 @@ import (
 // binds, such as a typo "db.pool.max-szie", is an error naming the closest
 // known key; AllowUnknown turns this check off. A key that a bound value
 // references, such as db.host in db.url=jdbc:postgresql://${db.host}/app,
-// is known. It is skipped for an empty
-// prefix and for environment variable names such as DB_POOL_MAX_SIZ, which
-// cannot be told apart from variables for other programs.
+// is known. The check is skipped for an empty prefix and for environment
+// variable names such as DB_POOL_MAX_SIZ, which cannot be told apart from
+// variables for other programs. Finally, the validator given with
+// WithValidator checks the whole struct.
 //
 // All problems are collected and returned together as a *BindError.
 func Bind[T any](c *Config, prefix string, opts ...BindOption) (T, error) {
 	var out T
 	v := reflect.ValueOf(&out).Elem()
-	if v.Kind() != reflect.Struct || isText(v.Type()) {
-		return out, fmt.Errorf("gonf: bind %q: %s is not a struct", prefix, v.Type())
+	if err := checkTarget(prefix, v.Type()); err != nil {
+		return out, err
 	}
-	var o bindOptions
-	for _, opt := range opts {
-		opt(&o)
-	}
-	b := binder{c: c, known: map[string]struct{}{}, referenced: map[string]struct{}{}}
-	b.bindStruct(prefix, v)
-	if prefix != "" && !o.isUnknownAllowed {
-		b.checkUnknown(prefix)
-	}
-	if len(b.problems) > 0 {
+	b := c.bindRoot(prefix, v, opts)
+	checkUnknown([]*binder{b})
+	if err := b.err(); err != nil {
 		var zero T
-		return zero, &BindError{Prefix: prefix, Problems: b.problems}
+		return zero, err
 	}
 	return out, nil
+}
+
+// checkTarget reports an error unless t is a struct Bind can bind.
+func checkTarget(prefix string, t reflect.Type) error {
+	if t.Kind() != reflect.Struct || isText(t) {
+		return fmt.Errorf("gonf: bind %q: %s is not a struct", prefix, t)
+	}
+	return nil
+}
+
+// bindRoot binds the struct v to the keys under prefix and validates it. It
+// does not check for unknown keys; see checkUnknown.
+func (c *Config) bindRoot(prefix string, v reflect.Value, opts []BindOption) *binder {
+	b := &binder{c: c, prefix: prefix, known: map[string]struct{}{}, referenced: map[string]struct{}{}}
+	for _, opt := range opts {
+		opt(&b.options)
+	}
+	b.bindStruct(prefix, v)
+	if len(b.problems) == 0 && c.validator != nil {
+		if err := c.validator(v.Addr().Interface()); err != nil {
+			b.fail(prefix, Origin{}, err)
+		}
+	}
+	return b
 }
 
 // BindOption configures Bind.
@@ -165,6 +183,8 @@ var (
 // binder binds the fields of one Bind call and collects its problems.
 type binder struct {
 	c        *Config
+	prefix   string
+	options  bindOptions
 	problems []*Problem
 	// known holds the keys of the bound fields, open the prefixes of
 	// slices and maps, whose keys are all known.
@@ -182,6 +202,14 @@ func (b *binder) reference(key string) {
 // validator is implemented by structs that check themselves after Bind.
 type validator interface {
 	Validate() error
+}
+
+// err returns the problems as a *BindError, or nil.
+func (b *binder) err() error {
+	if len(b.problems) == 0 {
+		return nil
+	}
+	return &BindError{Prefix: b.prefix, Problems: b.problems}
 }
 
 func (b *binder) fail(key string, origin Origin, err error) {
@@ -376,11 +404,22 @@ func (b *binder) bindMap(key string, v reflect.Value) {
 	}
 }
 
-// checkUnknown reports the keys under prefix that no field binds.
-func (b *binder) checkUnknown(prefix string) {
-	under := prefix + "."
+// checkUnknown reports, for every binder that checks for unknown keys, the
+// keys under its prefix that none of the binders knows. Binders that share
+// a prefix thus do not report each other's keys.
+func checkUnknown(binders []*binder) {
+	for _, b := range binders {
+		if b.prefix != "" && !b.options.isUnknownAllowed {
+			b.checkUnknown(binders)
+		}
+	}
+}
+
+func (b *binder) checkUnknown(binders []*binder) {
+	under := b.prefix + "."
 	for _, k := range b.c.keys {
-		if !strings.HasPrefix(k, under) || b.isKnown(k) {
+		isKnown := slices.ContainsFunc(binders, func(o *binder) bool { return o.isKnown(k) })
+		if !strings.HasPrefix(k, under) || isKnown {
 			continue
 		}
 		err := errors.New("unknown key")

@@ -15,6 +15,8 @@ type loadOptions struct {
 	factories  []SourceFactory
 	profiles   []string
 	profileKey string
+	mappings   []AnyMapping
+	validator  func(v any) error
 }
 
 // WithSources adds Sources. Can be passed multiple times; the order of
@@ -65,7 +67,8 @@ func WithFactories(factories ...SourceFactory) Option {
 // Load works in two phases. First it loads the Sources given with
 // WithSources and settles the active profiles. Then it passes the result to
 // every SourceFactory and loads the Sources they return. If the first phase
-// fails, no factory runs.
+// fails, no factory runs. Finally it binds the Mappings given with
+// WithMappings and returns the BindErrors of all of them together.
 //
 // Every Source is loaded even if an earlier one fails; all failures are
 // returned together, as SourceErrors joined with errors.Join.
@@ -89,14 +92,19 @@ func Load(ctx context.Context, opts ...Option) (*Config, error) {
 		}
 	}
 	cfg := newConfig(loaded, profiles)
-	if len(o.factories) == 0 {
-		return cfg, nil
+	cfg.validator = o.validator
+	if len(o.factories) > 0 {
+		late, err := runFactories(ctx, o.factories, cfg)
+		if err != nil {
+			return nil, err
+		}
+		cfg = newConfig(append(loaded, late...), profiles)
+		cfg.validator = o.validator
 	}
-	late, err := runFactories(ctx, o.factories, cfg)
-	if err != nil {
+	if err := cfg.bindMappings(o.mappings); err != nil {
 		return nil, err
 	}
-	return newConfig(append(loaded, late...), profiles), nil
+	return cfg, nil
 }
 
 // runFactories passes cfg to every factory and loads the Sources they

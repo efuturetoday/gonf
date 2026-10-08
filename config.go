@@ -16,6 +16,11 @@ type Config struct {
 	// profiles holds the active profiles, strongest first.
 	profiles []string
 	keys     []string
+	// validator is set with WithValidator.
+	validator func(v any) error
+	// mappings holds the bound value of every Mapping given with
+	// WithMappings.
+	mappings map[AnyMapping]any
 }
 
 type loadedSource struct {

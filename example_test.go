@@ -126,3 +126,25 @@ func ExampleBindError() {
 	//   db.max-size: invalid int "ten" (from file:app.properties)
 	//   db.ulr: unknown key, did you mean db.url? (from file:app.properties)
 }
+
+func ExampleMapping() {
+	// In a library: the configuration of the module and its Mapping.
+	type DBConfig struct {
+		URL  string
+		Pool struct {
+			MaxSize int `default:"10"`
+		}
+	}
+	db := gonf.NewMapping[DBConfig]("db")
+
+	// In the application: Load binds and validates every Mapping.
+	cfg, err := gonf.Load(context.Background(),
+		gonf.WithMappings(db),
+		gonf.WithSources(memory.New(map[string]string{"db.url": "jdbc:postgresql://localhost/app"})),
+	)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(db.Get(cfg).URL, db.Get(cfg).Pool.MaxSize)
+	// Output: jdbc:postgresql://localhost/app 10
+}

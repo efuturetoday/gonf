@@ -17,15 +17,15 @@ const masked = "****"
 //		Password gonf.Secret[string]
 //	}
 //
-// Bind converts the value as for a field of type T, which must be a type
-// Bind converts from a single value, such as string, int or a type with
+// Load converts the value as for a field of type T, which must be a type
+// Load converts from a single value, such as string, int or a type with
 // UnmarshalText. An invalid value is reported without the value itself.
 // Use *Secret[T] for an optional secret.
 //
 // fmt, encoding/json and other encodings using MarshalText, and log/slog
 // print "****"; Value returns the value. Keys bound to a Secret are masked
 // in Explain. A field that refers to a secret key with ${...} must be a
-// Secret too; Bind reports it otherwise.
+// Secret too; Load reports it otherwise.
 type Secret[T any] struct {
 	value T
 }
@@ -57,7 +57,7 @@ func (s *Secret[T]) setSecret(v reflect.Value) {
 	}
 }
 
-// secret is implemented by *Secret[T]; Bind fills it through these methods.
+// secret is implemented by *Secret[T]; binding fills it through these methods.
 type secret interface {
 	secretType() reflect.Type
 	setSecret(v reflect.Value)

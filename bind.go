@@ -14,92 +14,10 @@ import (
 	"unicode"
 )
 
-// Bind maps the keys under prefix onto a new T, which must be a struct.
-//
-// Every exported field is bound to the key prefix.name. The name is the
-// field name in kebab case (MaxSize becomes max-size) unless the field has a
-// `cfg:"name"` tag; `cfg:"-"` skips the field. Values are read like Get, so
-// profiles, ${...} expressions and environment variables (DB_POOL_MAX_SIZE)
-// apply. An empty value counts as not set. A `desc:"..."` tag documents
-// the field for Describe.
-//
-// A field without a value uses its `default:"..."` tag, which is expanded
-// like a value; an empty default leaves the zero value. A field with neither
-// is an error, except for:
-//
-//   - pointers, which stay nil, so *int or *Pool is optional
-//   - slices and maps, which stay empty
-//
-// Field types:
-//
-//   - string, bool, integers, floats; bool accepts true/false, 1/0, yes/no
-//     and on/off in any case; integers are decimal unless they have a
-//     prefix as in Go (0b101, 0o644, 0x1f) and may contain underscores
-//     (1_000); a leading zero as in 0644 is an error, as it reads as octal
-//     in Go but as decimal elsewhere
-//   - time.Duration in the format of time.ParseDuration, such as 5s or 1h30m
-//   - any type whose pointer implements encoding.TextUnmarshaler
-//   - any type with a converter given with WithConverter, which replaces
-//     the rules above
-//   - Secret[T] of any of these types
-//   - structs, bound to the keys under prefix.name; an embedded struct
-//     without a cfg tag is bound to the keys of its parent
-//   - slices, from a comma-separated value (a,b,c; \, for a literal comma)
-//     or from indexed keys such as name[0] and name[1].host; the
-//     comma-separated value wins if both exist
-//   - maps, whose keys are the segments after prefix.name, e.g. "team" for
-//     db.labels.team; a segment containing dots is quoted:
-//     db.servers."eu.west".host
-//
-// Map entries and indexed elements are found among the keys of the Sources
-// (see Keys); environment variables can override them but, except for
-// indexed elements, not add new ones.
-//
-// After its fields are bound without problems, a struct whose pointer
-// implements
-//
-//	Validate() error
-//
-// is validated; inner structs come first. A key under prefix that no field
-// binds, such as a typo "db.pool.max-szie", is an error naming the closest
-// known key; AllowUnknown turns this check off. A key that a bound value
-// references, such as db.host in db.url=postgres://${db.host}/app,
-// is known. The check is skipped for an empty prefix and for environment
-// variable names such as DB_POOL_MAX_SIZ, which cannot be told apart from
-// variables for other programs. Finally, the validator given with
-// WithValidator checks the whole struct.
-//
-// A field that is no Secret but whose value or default refers to a secret
-// key, as in url=postgres://app:${db.password}@db/app, is a problem: the
-// field would hold the secret and print it. Make the field a Secret too.
-// Secret keys are those that Explain masks.
-//
-// A field type or tag that Bind cannot read, such as a func field or a
-// default for a struct, is a problem even inside an optional struct or a
-// list or map without entries; Bind then reads no value.
-//
-// All problems are collected and returned together as a *BindError.
-func Bind[T any](c *Config, prefix string, opts ...BindOption) (T, error) {
-	var out T
-	v := reflect.ValueOf(&out).Elem()
-	m, err := c.converters.rootModel(prefix, v.Type())
-	if err != nil {
-		return out, err
-	}
-	b := c.bindRoot(prefix, m, v, opts)
-	checkUnknown([]*binder{b})
-	b.checkSecretReferences()
-	if err := b.err(); err != nil {
-		var zero T
-		return zero, err
-	}
-	return out, nil
-}
-
 // bindRoot binds the struct v of model m to the keys under prefix and
 // validates it. It does not check for unknown keys; see checkUnknown. If m
 // has problems, it reports them and binds nothing.
-func (c *Config) bindRoot(prefix string, m *model, v reflect.Value, opts []BindOption) *binder {
+func (c *Config) bindRoot(prefix string, m *model, v reflect.Value, opts []MappingOption) *binder {
 	b := &binder{
 		c:          c,
 		cs:         c.converters,
@@ -127,8 +45,8 @@ func (c *Config) bindRoot(prefix string, m *model, v reflect.Value, opts []BindO
 	return b
 }
 
-// BindOption configures Bind.
-type BindOption func(*bindOptions)
+// MappingOption configures how Load binds a Mapping.
+type MappingOption func(*bindOptions)
 
 type bindOptions struct {
 	isUnknownAllowed bool
@@ -136,11 +54,11 @@ type bindOptions struct {
 
 // AllowUnknown turns off the check for unknown keys under the prefix, e.g.
 // when several structs bind parts of the same prefix.
-func AllowUnknown() BindOption {
+func AllowUnknown() MappingOption {
 	return func(o *bindOptions) { o.isUnknownAllowed = true }
 }
 
-// BindError reports every key that Bind could not bind.
+// BindError reports every key of one Mapping that Load could not bind.
 type BindError struct {
 	Prefix   string
 	Problems []*Problem
@@ -172,7 +90,7 @@ func (e *BindError) Unwrap() []error {
 	return errs
 }
 
-// Problem is one key that Bind could not bind.
+// Problem is one key that Load could not bind.
 type Problem struct {
 	Key string
 	// Origin is where the offending value came from; zero if the key has no
@@ -205,7 +123,7 @@ var (
 	textType     = reflect.TypeFor[encoding.TextUnmarshaler]()
 )
 
-// binder binds the fields of one Bind call and collects its problems.
+// binder binds the fields of one Mapping and collects its problems.
 type binder struct {
 	c        *Config
 	cs       converters
@@ -275,7 +193,7 @@ func (b *binder) checkSecretReferences() {
 	}
 }
 
-// validator is implemented by structs that check themselves after Bind.
+// validator is implemented by structs that check themselves after binding.
 type validator interface {
 	Validate() error
 }

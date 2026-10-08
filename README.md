@@ -62,15 +62,14 @@ type Config struct {
 	}
 }
 
+var appConfig = gonf.NewMapping[Config]("app")
+
 func main() {
-	cfg, err := boot.Load(context.Background())
+	cfg, err := boot.Load(context.Background(), boot.WithMappings(appConfig))
 	if err != nil {
 		log.Fatal(err)
 	}
-	c, err := gonf.Bind[Config](cfg, "app")
-	if err != nil {
-		log.Fatal(err)
-	}
+	c := appConfig.Get(cfg)
 	fmt.Println(c.Port, c.DB.URL, c.DB.Password)
 }
 ```

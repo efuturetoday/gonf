@@ -90,7 +90,7 @@ func TestBind_Secret(t *testing.T) {
 		"app.keys[0]":  "k0",
 		"app.keys[1]":  "k1",
 	}, nil)
-	got, err := gonf.Bind[credentials](cfg, "app")
+	got, err := bind[credentials](cfg, "app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestBind_SecretErrors(t *testing.T) {
 		{
 			name: "invalid value is hidden",
 			bind: func(cfg *gonf.Config) error {
-				_, err := gonf.Bind[struct{ Pin gonf.Secret[int] }](cfg, "bad")
+				_, err := bind[struct{ Pin gonf.Secret[int] }](cfg, "bad")
 				return err
 			},
 			expectedError: `gonf: bind "bad": bad.pin: invalid int, value hidden (from file:app.properties)`,
@@ -126,7 +126,7 @@ func TestBind_SecretErrors(t *testing.T) {
 		{
 			name: "error of UnmarshalText is hidden",
 			bind: func(cfg *gonf.Config) error {
-				_, err := gonf.Bind[struct{ Level gonf.Secret[level] }](cfg, "worse")
+				_, err := bind[struct{ Level gonf.Secret[level] }](cfg, "worse")
 				return err
 			},
 			expectedError: `gonf: bind "worse": worse.level: invalid gonf_test.level, value hidden (from file:app.properties)`,
@@ -134,7 +134,7 @@ func TestBind_SecretErrors(t *testing.T) {
 		{
 			name: "missing secret is required",
 			bind: func(cfg *gonf.Config) error {
-				_, err := gonf.Bind[struct{ Token gonf.Secret[string] }](cfg, "none")
+				_, err := bind[struct{ Token gonf.Secret[string] }](cfg, "none")
 				return err
 			},
 			expectedError: `gonf: bind "none": none.token: required, no value`,
@@ -142,7 +142,7 @@ func TestBind_SecretErrors(t *testing.T) {
 		{
 			name: "secret of a struct",
 			bind: func(cfg *gonf.Config) error {
-				_, err := gonf.Bind[nested](cfg, "none")
+				_, err := bind[nested](cfg, "none")
 				return err
 			},
 			expectedError: `gonf: bind "none": none.inner: unsupported type gonf.Secret[struct { A string }], a secret must hold a single value`,
@@ -150,7 +150,7 @@ func TestBind_SecretErrors(t *testing.T) {
 		{
 			name: "secret is not a struct to bind",
 			bind: func(cfg *gonf.Config) error {
-				_, err := gonf.Bind[gonf.Secret[string]](cfg, "none")
+				_, err := bind[gonf.Secret[string]](cfg, "none")
 				return err
 			},
 			expectedError: `gonf: bind "none": gonf.Secret[string] is not a struct`,

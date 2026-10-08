@@ -37,7 +37,7 @@ import (
 // entry whose name contains a dot is quoted, as in .properties.
 //
 // Values keep the text they have in the file: yes stays yes and 0644 stays
-// 0644, so Bind reads them by its own rules. null produces no key.
+// 0644, so Load reads them by its own rules. null produces no key.
 // Anchors, aliases and merge keys (<<) work.
 //
 // Every value has its file and line as Location. A file may hold several

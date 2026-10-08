@@ -6,10 +6,10 @@ import (
 	"slices"
 )
 
-// model describes how Bind reads a Go type, built from the type alone,
-// without any value. Bind fills a value by it and Describe lists its keys,
+// model describes how Load reads a Go type, built from the type alone,
+// without any value. Load fills a value by it and Describe lists its keys,
 // so the documentation cannot drift from what Load does. The model reports
-// a type Bind cannot read before any value is read.
+// a type Load cannot read before any value is read.
 type model struct {
 	typ  reflect.Type
 	kind kind
@@ -18,17 +18,17 @@ type model struct {
 	elem *model
 	// fields are the fields of a group.
 	fields []field
-	// err is why Bind cannot read typ, if kind is kindInvalid.
+	// err is why Load cannot read typ, if kind is kindInvalid.
 	err error
 	// isSecret reports whether the value is a Secret, also behind pointers
 	// and in lists.
 	isSecret bool
 	// hasReferences reports whether the value holds pointers, slices or
-	// maps that Bind fills, which a copy must not share.
+	// maps that Load fills, which a copy must not share.
 	hasReferences bool
 }
 
-// kind is how Bind reads a type.
+// kind is how Load reads a type.
 type kind int
 
 const (
@@ -46,7 +46,7 @@ const (
 	kindGroup
 )
 
-// field is a key that Bind binds: a field of a group, or the element a
+// field is a key that Load binds: a field of a group, or the element a
 // pointer, list or map holds.
 type field struct {
 	name  string
@@ -56,13 +56,13 @@ type field struct {
 	desc string
 	// m is the model of the field's type; nil if err is set.
 	m *model
-	// err is why Bind cannot bind the field whatever its type, such as a
+	// err is why Load cannot bind the field whatever its type, such as a
 	// default for a group.
 	err        error
 	isRequired bool
 }
 
-// isRequired reports whether Bind fails without a value for a key of model
+// isRequired reports whether Load fails without a value for a key of model
 // m with the default tag def: a single value that is no pointer and has no
 // default.
 func isRequired(m *model, def *string) bool {
@@ -86,7 +86,7 @@ func (f field) entry() field {
 	return field{desc: f.desc, m: f.m.elem}
 }
 
-// rootModel returns the model of t, which Bind binds to prefix, or an error
+// rootModel returns the model of t, which Load binds to prefix, or an error
 // unless t is a struct.
 func (cs converters) rootModel(prefix string, t reflect.Type) (*model, error) {
 	mb := &modeler{cs: cs, models: map[reflect.Type]*model{}}
@@ -216,7 +216,7 @@ func (mb *modeler) fields(t reflect.Type) []field {
 }
 
 // walk calls visit for every key under key that holds a value of field f:
-// the scalars, the lists of scalars, and the fields and types Bind cannot
+// the scalars, the lists of scalars, and the fields and types Load cannot
 // read. Keys of list elements contain [<n>], keys of map entries <name>.
 // stack holds the groups being walked and stops recursive types.
 func walk(key string, f field, stack []*model, visit func(key string, f field)) {
@@ -244,7 +244,7 @@ func walk(key string, f field, stack []*model, visit func(key string, f field)) 
 	}
 }
 
-// problems returns a Problem for every field under prefix that Bind
+// problems returns a Problem for every field under prefix that Load
 // cannot bind because of its type or tags, in the order of the fields.
 func (m *model) problems(prefix string) []*Problem {
 	var out []*Problem

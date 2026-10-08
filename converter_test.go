@@ -48,7 +48,7 @@ func TestWithConverter(t *testing.T) {
 		"api.level":         "abc",
 		"api.by-level.abcd": "four",
 	}, nil, gonf.WithConverter(url.Parse), gonf.WithConverter(seconds), gonf.WithConverter(upperLevel))
-	got, err := gonf.Bind[endpoints](cfg, "api")
+	got, err := bind[endpoints](cfg, "api")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestWithConverter_Errors(t *testing.T) {
 	t.Run("invalid value", func(t *testing.T) {
 		t.Parallel()
 		cfg := load(t, map[string]string{"api.backup": "::", "api.admin": "::pw"}, nil, gonf.WithConverter(url.Parse))
-		_, err := gonf.Bind[struct {
+		_, err := bind[struct {
 			Backup *url.URL
 			Admin  gonf.Secret[*url.URL]
 		}](cfg, "api")

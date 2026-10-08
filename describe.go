@@ -47,8 +47,8 @@ type Property struct {
 //
 // Describe reads no Source and runs no SourceFactory, so it works without
 // the values, e.g. in a build. It uses WithConverter to tell single values
-// from structs and the Sources only for Property.Env. Describe and Bind read
-// a struct the same way, so a field type Bind cannot read is the same
+// from structs and the Sources only for Property.Env. Describe and Load read
+// a struct the same way, so a field type Load cannot read is the same
 // *BindError here as in Load. Of two Mappings with the same key, the first
 // describes it.
 //

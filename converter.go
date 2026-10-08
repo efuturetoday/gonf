@@ -17,12 +17,12 @@ type converter struct {
 }
 
 // WithConverter registers a function that converts a value into a T for
-// Bind and Mappings, for a type that cannot implement
+// Mappings, for a type that cannot implement
 // encoding.TextUnmarshaler because it belongs to another package:
 //
 //	gonf.WithConverter(url.Parse) // fields of type *url.URL
 //
-// A type that Bind would read by its underlying kind needs one if its
+// A type that Load would read by its underlying kind needs one if its
 // values are written differently, such as fs.FileMode, a uint32 written in
 // octal:
 //

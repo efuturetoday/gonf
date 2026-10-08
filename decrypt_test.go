@@ -119,7 +119,7 @@ func TestWithSecretHandler_Bind(t *testing.T) {
 		"db.password": "${upper::s3cret}",
 		"db.url":      "postgres://app:${db.password}@db/app",
 	}
-	_, err := gonf.Bind[db](load(t, values, nil, gonf.WithSecretHandler("upper", u.handle)), "db")
+	_, err := bind[db](load(t, values, nil, gonf.WithSecretHandler("upper", u.handle)), "db")
 	expected := `gonf: bind "db": 2 problems:
   db.url: refers to the secret db.password, make the field a gonf.Secret (from file:app.properties)
   db.user: is decrypted with upper, make the field a gonf.Secret`
@@ -131,7 +131,7 @@ func TestWithSecretHandler_Bind(t *testing.T) {
 		Password gonf.Secret[string]
 		User     gonf.Secret[string] `default:"${upper::admin}"`
 	}
-	got, err := gonf.Bind[fixed](load(t, values, nil, gonf.WithSecretHandler("upper", u.handle)), "db", gonf.AllowUnknown())
+	got, err := bind[fixed](load(t, values, nil, gonf.WithSecretHandler("upper", u.handle)), "db", gonf.AllowUnknown())
 	if err != nil {
 		t.Fatal(err)
 	}

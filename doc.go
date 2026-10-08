@@ -15,8 +15,9 @@
 // Values may reference other keys with ${key} or ${key:default}; Get expands
 // them.
 //
-// Bind maps the keys under a prefix onto a struct, such as "db.url" and
-// "db.pool.max-size" onto a DBConfig, and reports all problems at once.
+// A Mapping binds the keys under a prefix to a struct, such as "db.url" and
+// "db.pool.max-size" to a DBConfig; Load binds every Mapping and reports
+// all problems at once.
 // A field of type Secret keeps its value out of fmt, JSON and log output.
 //
 // Explain tells where the value of a key comes from and what it overrides,

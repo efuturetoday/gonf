@@ -17,12 +17,77 @@ import (
 // validates it with all other Mappings, and reads it with Get.
 type Mapping[T any] struct {
 	prefix string
-	opts   []BindOption
+	opts   []MappingOption
 }
 
 // NewMapping returns a Mapping of T, which must be a struct, to the keys
-// under prefix. opts apply as in Bind.
-func NewMapping[T any](prefix string, opts ...BindOption) *Mapping[T] {
+// under prefix. Load binds it as follows.
+//
+// Every exported field is bound to the key prefix.name. The name is the
+// field name in kebab case (MaxSize becomes max-size) unless the field has a
+// `cfg:"name"` tag; `cfg:"-"` skips the field. Values are read like Get, so
+// profiles, ${...} expressions and environment variables (DB_POOL_MAX_SIZE)
+// apply. An empty value counts as not set. A `desc:"..."` tag documents
+// the field for Describe.
+//
+// A field without a value uses its `default:"..."` tag, which is expanded
+// like a value; an empty default leaves the zero value. A field with neither
+// is an error, except for:
+//
+//   - pointers, which stay nil, so *int or *Pool is optional
+//   - slices and maps, which stay empty
+//
+// Field types:
+//
+//   - string, bool, integers, floats; bool accepts true/false, 1/0, yes/no
+//     and on/off in any case; integers are decimal unless they have a
+//     prefix as in Go (0b101, 0o644, 0x1f) and may contain underscores
+//     (1_000); a leading zero as in 0644 is an error, as it reads as octal
+//     in Go but as decimal elsewhere
+//   - time.Duration in the format of time.ParseDuration, such as 5s or 1h30m
+//   - any type whose pointer implements encoding.TextUnmarshaler
+//   - any type with a converter given with WithConverter, which replaces
+//     the rules above
+//   - Secret[T] of any of these types
+//   - structs, bound to the keys under prefix.name; an embedded struct
+//     without a cfg tag is bound to the keys of its parent
+//   - slices, from a comma-separated value (a,b,c; \, for a literal comma)
+//     or from indexed keys such as name[0] and name[1].host; the
+//     comma-separated value wins if both exist
+//   - maps, whose keys are the segments after prefix.name, e.g. "team" for
+//     db.labels.team; a segment containing dots is quoted:
+//     db.servers."eu.west".host
+//
+// Map entries and indexed elements are found among the keys of the Sources
+// (see Keys); environment variables can override them but, except for
+// indexed elements, not add new ones.
+//
+// After its fields are bound without problems, a struct whose pointer
+// implements
+//
+//	Validate() error
+//
+// is validated; inner structs come first. A key under prefix that no field
+// binds, such as a typo "db.pool.max-szie", is an error naming the closest
+// known key; AllowUnknown turns this check off. A key that a bound value
+// references, such as db.host in db.url=postgres://${db.host}/app,
+// is known. The check is skipped for an empty prefix and for environment
+// variable names such as DB_POOL_MAX_SIZ, which cannot be told apart from
+// variables for other programs. Finally, the validator given with
+// WithValidator checks the whole struct.
+//
+// A field that is no Secret but whose value or default refers to a secret
+// key, as in url=postgres://app:${db.password}@db/app, is a problem: the
+// field would hold the secret and print it. Make the field a Secret too.
+// Secret keys are those that Explain masks.
+//
+// A field type or tag that Load cannot read, such as a func field or a
+// default for a struct, is a problem even inside an optional struct or a
+// list or map without entries; Load then reads no value for the Mapping.
+//
+// All problems are collected; Load returns those of every Mapping
+// together, each Mapping's as a *BindError.
+func NewMapping[T any](prefix string, opts ...MappingOption) *Mapping[T] {
 	return &Mapping[T]{prefix: prefix, opts: slices.Clone(opts)}
 }
 
@@ -57,7 +122,7 @@ type boundMapping struct {
 }
 
 // deepCopy returns a copy of v, of model m, that shares no pointer, slice
-// or map that Bind filled.
+// or map that Load filled.
 func deepCopy(m *model, v reflect.Value) reflect.Value {
 	if !m.hasReferences {
 		return v
@@ -106,20 +171,20 @@ func deepCopy(m *model, v reflect.Value) reflect.Value {
 
 func (m *Mapping[T]) target() reflect.Type { return reflect.TypeFor[T]() }
 
-func (m *Mapping[T]) options() []BindOption { return m.opts }
+func (m *Mapping[T]) options() []MappingOption { return m.opts }
 
 // AnyMapping is a *Mapping of any type, as accepted by WithMappings.
 type AnyMapping interface {
 	Prefix() string
 	target() reflect.Type
-	options() []BindOption
+	options() []MappingOption
 }
 
 // WithMappings registers Mappings. Load binds and validates all of them and
 // reports the problems of all together. Keys under a prefix are unknown
 // only if no Mapping binds them, so Mappings may share a prefix.
 //
-// Default tags stay with the struct, as in Bind: they are not values of the
+// Default tags stay with the struct: they are not values of the
 // Config, so Get does not see them. A value that needs a fallback names it
 // itself, as in ${db.pool.max-size:10}.
 //
@@ -130,8 +195,8 @@ func WithMappings(mappings ...AnyMapping) Option {
 	}
 }
 
-// WithValidator sets a function that validates every struct bound by Bind
-// or a Mapping, such as Struct of github.com/go-playground/validator. It
+// WithValidator sets a function that validates every struct bound by a
+// Mapping, such as Struct of github.com/go-playground/validator. It
 // gets a pointer to the struct after its own Validate methods succeeded.
 func WithValidator(validate func(v any) error) Option {
 	return func(o *loadOptions) { o.validator = validate }

@@ -20,7 +20,7 @@ type SecretHandler func(cfg *Config, value string, origin Origin) (string, error
 // WithSecretHandler makes ${name::value} expressions decrypt value with
 // handler. A value decrypted this way is a secret: Explain masks it, and a
 // field that is no Secret but holds it, also through ${...} references, is
-// a Bind problem. Two handlers for the same name are a Load error.
+// a Load error. Two handlers for the same name are a Load error.
 //
 // A name consists of letters, digits and '-', such as "aes-gcm".
 func WithSecretHandler(name string, handler SecretHandler) Option {

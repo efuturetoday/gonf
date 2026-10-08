@@ -125,25 +125,26 @@ func TestHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			mapping := gonf.NewMapping[db]("db", gonf.AllowUnknown())
 			cfg, err := gonf.Load(context.Background(),
 				gonf.WithSecretHandler(aesgcm.Name, aesgcm.Handler),
+				gonf.WithMappings(mapping),
 				gonf.WithSources(
 					memory.New(tt.file, source.WithName("file:app.properties"), source.WithOrdinal(100)),
 					memory.New(tt.env, source.WithName("env:"), source.WithOrdinal(300)),
 				),
 			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, err := gonf.Bind[db](cfg, "db", gonf.AllowUnknown())
 			if tt.err != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.err) {
 					t.Errorf("error = %v, want it to contain %q", err, tt.err)
 				}
 				return
 			}
-			if err != nil || got.Password.Value() != "s3cret" {
-				t.Errorf("got %q, %v; want s3cret", got.Password.Value(), err)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := mapping.Get(cfg).Password.Value(); got != "s3cret" {
+				t.Errorf("got %q; want s3cret", got)
 			}
 		})
 	}

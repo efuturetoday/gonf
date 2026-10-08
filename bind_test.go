@@ -68,7 +68,7 @@ func TestBind(t *testing.T) {
 		"db.skipped":   "nope",
 		"db.ignored":   "nope",
 	}, nil)
-	got, err := gonf.Bind[DB](cfg, "db", gonf.AllowUnknown())
+	got, err := bind[DB](cfg, "db", gonf.AllowUnknown())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestBind_Prefix(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := gonf.Bind[root](cfg, tt.prefix)
+			got, err := bind[root](cfg, tt.prefix)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -131,7 +131,7 @@ func TestBind_Bool(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.value, func(t *testing.T) {
 			t.Parallel()
-			got, err := gonf.Bind[flags](load(t, map[string]string{"x.on": tt.value}, nil), "x")
+			got, err := bind[flags](load(t, map[string]string{"x.on": tt.value}, nil), "x")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -180,7 +180,7 @@ func TestBind_Integers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			cfg := load(t, map[string]string{"x.n": tt.value, "x.u": tt.value}, nil)
-			got, err := gonf.Bind[numbers](cfg, "x")
+			got, err := bind[numbers](cfg, "x")
 			if tt.expectedError != "" {
 				if err == nil || err.Error() != tt.expectedError {
 					t.Fatalf("err = %v, want\n%s", err, tt.expectedError)
@@ -212,7 +212,7 @@ func TestBind_Names(t *testing.T) {
 	cfg := load(t, map[string]string{
 		"max-size": "1", "http-port": "2", "url": "3", "v2-config": "4", "port2": "5", "ipv6-addr": "8", "other": "6", "empty-name": "7",
 	}, nil)
-	got, err := gonf.Bind[names](cfg, "")
+	got, err := bind[names](cfg, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestBind_EmptyValue(t *testing.T) {
 	}
 	cfg := load(t, map[string]string{"x.host": "file", "x.port": "1", "x.hosts": "a", "x.labels.a": "1", "x.labels.b": ""},
 		upperSource{"X_HOST": "", "X_PORT": "", "X_HOSTS": "", "X_TIMEOUT": ""})
-	got, err := gonf.Bind[target](cfg, "x")
+	got, err := bind[target](cfg, "x")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestBind_EnvAndProfiles(t *testing.T) {
 	}
 	cfg := load(t, map[string]string{"db.url": "prod", "%dev.db.url": "dev", "db.pool.max-size": "10"},
 		upperSource{"DB_POOL_MAX_SIZE": "20"}, gonf.WithProfiles("dev"))
-	got, err := gonf.Bind[db](cfg, "db")
+	got, err := bind[db](cfg, "db")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +385,7 @@ func TestBind_Maps(t *testing.T) {
 		"x.opt.o.host":                "o-host",
 		"xx.labels.other":             "ignored",
 	}, upperSource{"X_LABELS_TEAM": "env"})
-	got, err := gonf.Bind[maps](cfg, "x")
+	got, err := bind[maps](cfg, "x")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +411,7 @@ type node struct {
 func TestBind_Recursive(t *testing.T) {
 	t.Parallel()
 	cfg := load(t, map[string]string{"n.name": "a", "n.next.name": "b"}, nil)
-	got, err := gonf.Bind[node](cfg, "n")
+	got, err := bind[node](cfg, "n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -662,7 +662,7 @@ func TestBind_Validate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := gonf.Bind[limits](load(t, tt.values, nil), tt.prefix)
+			_, err := bind[limits](load(t, tt.values, nil), tt.prefix)
 			if tt.expectedError == "" {
 				if err != nil {
 					t.Fatal(err)
@@ -693,7 +693,7 @@ func TestBind_Unknown(t *testing.T) {
 		prefix        string
 		values        map[string]string
 		env           upperSource
-		opts          []gonf.BindOption
+		opts          []gonf.MappingOption
 		expectedError string
 	}{
 		{
@@ -738,7 +738,7 @@ func TestBind_Unknown(t *testing.T) {
 			name:   "allow unknown",
 			prefix: "db",
 			values: map[string]string{"db.url": "u", "db.extra": "x"},
-			opts:   []gonf.BindOption{gonf.AllowUnknown()},
+			opts:   []gonf.MappingOption{gonf.AllowUnknown()},
 		},
 		{
 			name:   "empty prefix is not checked",
@@ -749,7 +749,7 @@ func TestBind_Unknown(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := gonf.Bind[db](load(t, tt.values, tt.env), tt.prefix, tt.opts...)
+			_, err := bind[db](load(t, tt.values, tt.env), tt.prefix, tt.opts...)
 			if tt.expectedError == "" {
 				if err != nil {
 					t.Fatal(err)
@@ -786,7 +786,7 @@ func TestBind_SecretReferences(t *testing.T) {
 		"api-token":  "t0k3n",
 		"other":      "o",
 	}, nil)
-	_, err := gonf.Bind[target](cfg, "x")
+	_, err := bind[target](cfg, "x")
 	expected := `gonf: bind "x": 5 problems:
   x.url: refers to the secret x.password, make the field a gonf.Secret (from file:app.properties)
   x.chain: refers to the secret x.password, make the field a gonf.Secret (from file:app.properties)
@@ -801,7 +801,7 @@ func TestBind_SecretReferences(t *testing.T) {
 func TestBind_ErrorTypes(t *testing.T) {
 	t.Parallel()
 	cfg := load(t, map[string]string{"x.url": "${nope}", "app.name": "shop"}, nil)
-	got, err := gonf.Bind[DB](cfg, "x")
+	got, err := bind[DB](cfg, "x")
 	if !reflect.DeepEqual(got, DB{}) {
 		t.Errorf("Bind returned %+v on error, want zero value", got)
 	}
@@ -823,17 +823,23 @@ func TestBind_ErrorTypes(t *testing.T) {
 func TestBind_NotStruct(t *testing.T) {
 	t.Parallel()
 	cfg := load(t, nil, nil)
-	if _, err := gonf.Bind[int](cfg, "x"); err == nil || !strings.Contains(err.Error(), "int is not a struct") {
+	if _, err := bind[int](cfg, "x"); err == nil || !strings.Contains(err.Error(), "int is not a struct") {
 		t.Errorf("Bind[int] error = %v", err)
 	}
-	_, err := gonf.Bind[netip.Addr](cfg, "x")
+	_, err := bind[netip.Addr](cfg, "x")
 	if err == nil || !strings.Contains(err.Error(), "netip.Addr is not a struct") {
 		t.Errorf("Bind[netip.Addr] error = %v", err)
 	}
 }
 
 func bindAs[T any](cfg *gonf.Config) (any, error) {
-	return gonf.Bind[T](cfg, "x")
+	return bind[T](cfg, "x")
+}
+
+// bind binds T to the keys under prefix of cfg the way Load binds a
+// Mapping.
+func bind[T any](cfg *gonf.Config, prefix string, opts ...gonf.MappingOption) (T, error) {
+	return gonf.BindMapping(cfg, gonf.NewMapping[T](prefix, opts...))
 }
 
 // FuzzBind checks that Bind never panics, whatever the keys and values.
@@ -856,7 +862,7 @@ func FuzzBind(f *testing.F) {
 		if err != nil {
 			return
 		}
-		_, _ = gonf.Bind[fuzzTarget](cfg, "x")
+		_, _ = bind[fuzzTarget](cfg, "x")
 	})
 }
 
@@ -883,7 +889,7 @@ func BenchmarkBind(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := gonf.Bind[benchDB](cfg, "db"); err != nil {
+		if _, err := bind[benchDB](cfg, "db"); err != nil {
 			b.Fatal(err)
 		}
 	}

@@ -84,8 +84,8 @@ func TestMapping_Get_Copies(t *testing.T) {
 		"x.next.next.name":  "n2",
 		"x.plain.name":      "p",
 	}, nil, gonf.WithMappings(m))
-	// Bind fills a new value, which shares nothing with the Mapping.
-	expected, err := gonf.Bind[copied](cfg, "x")
+	// bind fills a new value, which shares nothing with the Mapping.
+	expected, err := bind[copied](cfg, "x")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +102,18 @@ func TestMapping_Get_Copies(t *testing.T) {
 
 	if again := m.Get(cfg); !reflect.DeepEqual(again, expected) {
 		t.Errorf("Get after modifying a copy = %+v, want %+v", again, expected)
+	}
+}
+
+func TestMapping_SecretInExplain(t *testing.T) {
+	t.Parallel()
+	// A Secret field whose key does not sound secret is masked too.
+	type api struct {
+		Key gonf.Secret[string]
+	}
+	cfg := load(t, map[string]string{"api.key": "abc123"}, nil, gonf.WithMappings(gonf.NewMapping[api]("api")))
+	if got, expected := cfg.Explain("api.key").String(), "api.key = **** (file:app.properties)"; got != expected {
+		t.Errorf("Explain = %q, want %q", got, expected)
 	}
 }
 
@@ -254,7 +266,7 @@ func TestWithValidator(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			cfg := load(t, map[string]string{"x.name": tt.value}, nil, validator)
-			_, err := gonf.Bind[checked](cfg, "x")
+			_, err := bind[checked](cfg, "x")
 			if tt.expectedError == "" {
 				if err != nil {
 					t.Fatal(err)

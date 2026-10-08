@@ -1,7 +1,8 @@
 # Structs
 
-`gonf.Bind` fills a struct from the keys under a prefix and reports all
-problems together:
+gonf fills a struct from the keys under a prefix. A Mapping declares the
+struct and its prefix once; `Load` binds every Mapping and reports all
+problems together, at start:
 
 ```go
 type Config struct {
@@ -12,34 +13,19 @@ type Config struct {
 	}
 }
 
-cfg, err := boot.Load(ctx)
-...
-c, err := gonf.Bind[Config](cfg, "db")
-```
-
-## Mappings
-
-A Mapping binds a struct once, at `Load`. It is worth it when:
-
-- a library brings its own configuration, and the application should learn
-  about its problems at start, together with all others;
-- `boot.Watch` should reject a reload that breaks the struct, keeping the
-  running configuration;
-- `boot.Describe` should list the keys for a configuration reference;
-- `Explain` should mask its `gonf.Secret` fields; without a Mapping it
-  masks only keys named like secrets, such as `db.password`;
-- the struct is read often: `Get` returns the bound value without binding
-  again.
-
-```go
-// In the library:
 var Mapping = gonf.NewMapping[Config]("db")
 
-// In the application:
-cfg, err := boot.Load(ctx, boot.WithMappings(db.Mapping))
+cfg, err := boot.Load(ctx, boot.WithMappings(Mapping))
 ...
-c := db.Mapping.Get(cfg)
+c := Mapping.Get(cfg)
 ```
+
+A library declares its Mapping next to its struct, and the application
+registers it. Because `Load` knows every Mapping, a broken reload is
+rejected, `Explain` masks the Secret fields and `boot.Describe` lists the
+keys. Keys whose names are known only at runtime, such as one block per
+tenant, go into a map field: `Tenants map[string]Tenant` binds
+`tenants.<name>.…`.
 
 `Get` panics if the Mapping was not registered, because that is a
 programming error; every configuration error is reported by `Load`.

@@ -79,7 +79,7 @@ func ExampleWithFactories() {
 	// Output: vault:https://vault:8200
 }
 
-func ExampleBind() {
+func ExampleNewMapping() {
 	type Pool struct {
 		MaxSize int           `default:"10"`
 		Idle    time.Duration `cfg:"idle-timeout" default:"5m"`
@@ -90,19 +90,20 @@ func ExampleBind() {
 		Replicas []string
 		Timeout  *time.Duration
 	}
-	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(map[string]string{
-		"db.host":          "localhost",
-		"db.url":           "postgres://${db.host}/app",
-		"db.pool.max-size": "20",
-		"db.replicas":      "replica-1,replica-2",
-	})))
+	mapping := gonf.NewMapping[DB]("db")
+	cfg, err := gonf.Load(context.Background(),
+		gonf.WithMappings(mapping),
+		gonf.WithSources(memory.New(map[string]string{
+			"db.host":          "localhost",
+			"db.url":           "postgres://${db.host}/app",
+			"db.pool.max-size": "20",
+			"db.replicas":      "replica-1,replica-2",
+		})),
+	)
 	if err != nil {
 		panic(err)
 	}
-	db, err := gonf.Bind[DB](cfg, "db")
-	if err != nil {
-		panic(err)
-	}
+	db := mapping.Get(cfg)
 	fmt.Println(db.URL)
 	fmt.Println(db.Pool.MaxSize, db.Pool.Idle, db.Replicas, db.Timeout)
 	// Output:
@@ -115,14 +116,13 @@ func ExampleBindError() {
 		URL     string
 		MaxSize int
 	}
-	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(
-		map[string]string{"db.max-size": "ten", "db.ulr": "postgres://localhost/app"},
-		source.WithName("file:app.properties"),
-	)))
-	if err != nil {
-		panic(err)
-	}
-	_, err = gonf.Bind[DB](cfg, "db")
+	_, err := gonf.Load(context.Background(),
+		gonf.WithMappings(gonf.NewMapping[DB]("db")),
+		gonf.WithSources(memory.New(
+			map[string]string{"db.max-size": "ten", "db.ulr": "postgres://localhost/app"},
+			source.WithName("file:app.properties"),
+		)),
+	)
 	fmt.Println(err)
 	// Output:
 	// gonf: bind "db": 3 problems:
@@ -158,17 +158,18 @@ func ExampleSecret() {
 		User     string
 		Password gonf.Secret[string]
 	}
-	cfg, err := gonf.Load(context.Background(), gonf.WithSources(memory.New(map[string]string{
-		"db.user":     "app",
-		"db.password": "hunter2",
-	})))
+	mapping := gonf.NewMapping[DBConfig]("db")
+	cfg, err := gonf.Load(context.Background(),
+		gonf.WithMappings(mapping),
+		gonf.WithSources(memory.New(map[string]string{
+			"db.user":     "app",
+			"db.password": "hunter2",
+		})),
+	)
 	if err != nil {
 		panic(err)
 	}
-	db, err := gonf.Bind[DBConfig](cfg, "db")
-	if err != nil {
-		panic(err)
-	}
+	db := mapping.Get(cfg)
 	fmt.Printf("%+v\n", db)
 	fmt.Println(db.Password.Value())
 	// Output:
@@ -212,17 +213,16 @@ func ExampleWithConverter() {
 	type API struct {
 		Endpoint *url.URL
 	}
+	mapping := gonf.NewMapping[API]("api")
 	cfg, err := gonf.Load(context.Background(),
 		gonf.WithConverter(url.Parse),
+		gonf.WithMappings(mapping),
 		gonf.WithSources(memory.New(map[string]string{"api.endpoint": "https://example.com/v1"})),
 	)
 	if err != nil {
 		panic(err)
 	}
-	api, err := gonf.Bind[API](cfg, "api")
-	if err != nil {
-		panic(err)
-	}
+	api := mapping.Get(cfg)
 	fmt.Println(api.Endpoint.Host, api.Endpoint.Path)
 	// Output: example.com /v1
 }

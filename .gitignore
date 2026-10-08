@@ -3,3 +3,7 @@
 
 # Local Claude Code settings (per machine)
 /.claude/settings.local.json
+
+# Claude Code skills of the maintainers (installed locally, see skills-lock.json)
+/.claude/skills/
+/skills-lock.json

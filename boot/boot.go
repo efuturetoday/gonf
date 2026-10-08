@@ -14,9 +14,14 @@
 // reads app-<profile>.<ext> next to every app.<ext>, with the same ordinal.
 // Files of inactive profiles are never read.
 //
+// Values written as ${aes-gcm::...} are decrypted with secret/aesgcm. Its
+// key is gonf.secret.aes-gcm.key, e.g. GONF_SECRET_AES_GCM_KEY, from any
+// Source but the one with the encrypted value. The gonf encrypt command
+// encrypts values.
+//
 // boot is extended from outside: WithFormat adds formats, WithFS a packaged
-// default configuration, and With passes any gonf.Option through, e.g.
-// more Sources or SourceFactories.
+// default configuration, WithSecretHandler secret handlers, and With
+// passes any gonf.Option through, e.g. more Sources or SourceFactories.
 //
 // Watch reads the same files as Load and reloads them when they change, see
 // gonf.Watch. The files on disk, including .env, are checked every
@@ -36,6 +41,7 @@ import (
 	"github.com/efuturetoday/gonf/format/dotenv"
 	"github.com/efuturetoday/gonf/format/json"
 	"github.com/efuturetoday/gonf/format/properties"
+	"github.com/efuturetoday/gonf/secret/aesgcm"
 	"github.com/efuturetoday/gonf/source"
 	"github.com/efuturetoday/gonf/source/env"
 	"github.com/efuturetoday/gonf/source/file"
@@ -69,7 +75,13 @@ type options struct {
 	formats  []format
 	embedded fs.FS
 	trigger  func(path string) source.Trigger
+	handlers []handler
 	core     []gonf.Option
+}
+
+type handler struct {
+	name    string
+	handler gonf.SecretHandler
 }
 
 type format struct {
@@ -89,6 +101,23 @@ func WithFormat(ext string, f source.Format) Option {
 			}
 		}
 		o.formats = append(o.formats, format{ext: ext, format: f})
+	}
+}
+
+// WithSecretHandler makes Load decrypt ${name::value} expressions with h,
+// see gonf.WithSecretHandler. A known name is replaced, e.g. to
+// pass the aes-gcm key in code:
+//
+//	boot.WithSecretHandler(aesgcm.Name, aesgcm.WithKey(key))
+func WithSecretHandler(name string, h gonf.SecretHandler) Option {
+	return func(o *options) {
+		for i := range o.handlers {
+			if o.handlers[i].name == name {
+				o.handlers[i].handler = h
+				return
+			}
+		}
+		o.handlers = append(o.handlers, handler{name: name, handler: h})
 	}
 }
 
@@ -148,6 +177,8 @@ func build(workDir string, opts []Option) []gonf.Option {
 	o := options{formats: []format{
 		{ext: "properties", format: properties.Format},
 		{ext: "json", format: json.Format},
+	}, handlers: []handler{
+		{name: aesgcm.Name, handler: aesgcm.Handler},
 	}}
 	for _, opt := range opts {
 		opt(&o)
@@ -192,6 +223,9 @@ func build(workDir string, opts []Option) []gonf.Option {
 		gonf.WithSources(srcs...),
 		gonf.WithProfileKey(ProfileKey),
 		gonf.WithFactories(profileFiles(locations, o.formats)),
+	}
+	for _, h := range o.handlers {
+		core = append(core, gonf.WithSecretHandler(h.name, h.handler))
 	}
 	return append(core, o.core...)
 }

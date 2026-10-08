@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/efuturetoday/gonf"
+	"github.com/efuturetoday/gonf/secret/aesgcm"
 	"github.com/efuturetoday/gonf/source"
 	"github.com/efuturetoday/gonf/source/memory"
 )
@@ -214,6 +215,60 @@ func TestWithFormat(t *testing.T) {
 		if v, _ := cfg.Lookup(key); v.Raw != expected {
 			t.Errorf("%s = %q, want %q", key, v.Raw, expected)
 		}
+	}
+}
+
+func TestWithSecretHandler(t *testing.T) {
+	t.Parallel()
+	encrypted, err := aesgcm.Encrypt("k3y", "s3cret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	upper := func(_ *gonf.Config, value string, _ gonf.Origin) (string, error) {
+		return strings.ToUpper(value), nil
+	}
+	tests := []struct {
+		name     string
+		files    map[string]string
+		opts     []Option
+		key      string
+		expected string
+	}{
+		{
+			name: "aes-gcm by default, key from .env",
+			files: map[string]string{
+				".env":                  "GONF_SECRET_AES_GCM_KEY=k3y\n",
+				"config/app.properties": "boottest.password=${aes-gcm::" + encrypted + "}\n",
+			},
+			key:      "boottest.password",
+			expected: "s3cret",
+		},
+		{
+			name:     "aes-gcm replaced",
+			files:    map[string]string{"config/app.properties": "boottest.password=${aes-gcm::" + encrypted + "}\n"},
+			opts:     []Option{WithSecretHandler(aesgcm.Name, aesgcm.WithKey("k3y"))},
+			key:      "boottest.password",
+			expected: "s3cret",
+		},
+		{
+			name:     "handler added",
+			files:    map[string]string{"config/app.properties": "boottest.token=${upper::abc}\n"},
+			opts:     []Option{WithSecretHandler("upper", upper)},
+			key:      "boottest.token",
+			expected: "ABC",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, err := load(workDir(t, tt.files), tt.opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err := cfg.Get(tt.key); err != nil || got != tt.expected {
+				t.Errorf("Get(%q) = %q, %v; want %q", tt.key, got, err, tt.expected)
+			}
+		})
 	}
 }
 

@@ -81,8 +81,25 @@ ${aes-gcm::DBu-8QjM2A1WGDV6fnfS-upDsjQYk4iWBPRvYwW1GZC0z8E}
 Neither the key nor the value is an argument, so neither ends up in the
 shell history. `-key-file` reads the key from a file.
 
-When loading, register the handler; it reads the key from the
-configuration key `gonf.secret.aes-gcm.key`:
+`boot.Load` and `boot.Watch` decrypt such values without any code. The
+key comes from the configuration key `gonf.secret.aes-gcm.key`, so
+`GONF_SECRET_AES_GCM_KEY` in the environment is enough:
+
+```console
+$ GONF_SECRET_AES_GCM_KEY=... go run .
+```
+
+Any Source may provide the key: the environment, `.env`, a database or a
+key store. It must not come from the Source of the encrypted value, since a
+key next to the values it protects protects nothing; Load reports that.
+Keep the key out of the repository. If the application gets the key
+elsewhere, pass it in code:
+
+```go
+cfg, err := boot.Load(ctx, boot.WithSecretHandler(aesgcm.Name, aesgcm.WithKey(key)))
+```
+
+Without boot, register the handler with Load:
 
 ```go
 cfg, err := gonf.Load(ctx,
@@ -91,12 +108,6 @@ cfg, err := gonf.Load(ctx,
 )
 ```
 
-Any Source may provide the key: the environment, `.env`, a database or a
-key store. It must not come from the Source of the encrypted value, since a
-key next to the values it protects protects nothing; Load reports that.
-Keep the key out of the repository. `aesgcm.WithKey(key)` decrypts with a
-key the application gets elsewhere.
-
 A decrypted value is a secret: `Explain` shows `****`, and a field for it
 must be a `gonf.Secret`, also when it refers to it with `${...}`:
 
@@ -104,11 +115,14 @@ must be a `gonf.Secret`, also when it refers to it with `${...}`:
 gonf: bind "db": db.password: is decrypted with aes-gcm, make the field a gonf.Secret (from file:config/app.properties:3)
 ```
 
-A wrong key or a damaged value stops the start without showing the value:
+A wrong or missing key or a damaged value stops the start without showing
+the value:
 
 ```
 gonf: bind "db": db.password: aes-gcm: wrong key or damaged value (from file:config/app.properties:3)
+gonf: bind "db": db.password: aes-gcm: the key gonf.secret.aes-gcm.key has no value (from file:config/app.properties:3)
 ```
 
 Other ways to decrypt, such as a cloud key service, plug in the same way
-with `gonf.WithSecretHandler(name, handler)` and `${name::value}`.
+with `boot.WithSecretHandler(name, handler)` (or
+`gonf.WithSecretHandler`) and `${name::value}`.

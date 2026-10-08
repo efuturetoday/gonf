@@ -102,7 +102,7 @@ value of the same ordinal. Values may refer to other keys:
 - **[Structs](docs/binding.md)**: names, defaults, optional fields, lists,
   maps, validation, unknown keys, and converters for types of other
   packages.
-- **[Secrets](docs/secrets.md)**: `gonf.Secret[T]` and what gets masked.
+- **[Secrets](docs/secrets.md)**: `gonf.Secret[T]`, what gets masked, and encrypted values.
 - **[Where does a value come from?](docs/explain.md)**: `cfg.Explain` shows
   the winning value, its file and line, and what it overrides.
 - **[Configuration reference](docs/reference.md)**: generate a table of all

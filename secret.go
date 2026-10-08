@@ -76,15 +76,6 @@ func secretElem(t reflect.Type) reflect.Type {
 	return s.secretType()
 }
 
-// holdsSecret reports whether a field of type t holds Secret values: t is a
-// Secret, or a pointer to or a slice of one.
-func holdsSecret(t reflect.Type) bool {
-	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice {
-		t = t.Elem()
-	}
-	return isSecret(t)
-}
-
 // secretWords mark a key as secret by its name, also without a Secret
 // field, as in "db.password", "api-token" or "AWS_SECRET_ACCESS_KEY".
 var secretWords = []string{"password", "secret", "token", "credential"}

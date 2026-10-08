@@ -104,12 +104,13 @@ func (c *Config) bindMappings(mappings []AnyMapping) error {
 		if slices.Contains(bound, m) {
 			continue
 		}
-		if err := c.converters.checkTarget(m.Prefix(), m.target()); err != nil {
+		root, err := c.converters.rootModel(m.Prefix(), m.target())
+		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
 		v := reflect.New(m.target()).Elem()
-		binders = append(binders, c.bindRoot(m.Prefix(), v, m.options()))
+		binders = append(binders, c.bindRoot(m.Prefix(), root, v, m.options()))
 		values = append(values, v)
 		bound = append(bound, m)
 	}

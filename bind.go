@@ -20,7 +20,8 @@ import (
 // field name in kebab case (MaxSize becomes max-size) unless the field has a
 // `cfg:"name"` tag; `cfg:"-"` skips the field. Values are read like Get, so
 // profiles, ${...} expressions and environment variables (DB_POOL_MAX_SIZE)
-// apply. An empty value counts as not set.
+// apply. An empty value counts as not set. A `desc:"..."` tag documents
+// the field for Describe.
 //
 // A field without a value uses its `default:"..."` tag, which is expanded
 // like a value; an empty default leaves the zero value. A field with neither
@@ -68,14 +69,19 @@ import (
 // variables for other programs. Finally, the validator given with
 // WithValidator checks the whole struct.
 //
+// A field type or tag that Bind cannot read, such as a func field or a
+// default for a struct, is a problem even inside an optional struct or a
+// list or map without entries; Bind then reads no value.
+//
 // All problems are collected and returned together as a *BindError.
 func Bind[T any](c *Config, prefix string, opts ...BindOption) (T, error) {
 	var out T
 	v := reflect.ValueOf(&out).Elem()
-	if err := c.converters.checkTarget(prefix, v.Type()); err != nil {
+	m, err := c.converters.rootModel(prefix, v.Type())
+	if err != nil {
 		return out, err
 	}
-	b := c.bindRoot(prefix, v, opts)
+	b := c.bindRoot(prefix, m, v, opts)
 	checkUnknown([]*binder{b})
 	if err := b.err(); err != nil {
 		var zero T
@@ -84,17 +90,10 @@ func Bind[T any](c *Config, prefix string, opts ...BindOption) (T, error) {
 	return out, nil
 }
 
-// checkTarget reports an error unless t is a struct Bind can bind.
-func (cs converters) checkTarget(prefix string, t reflect.Type) error {
-	if t.Kind() != reflect.Struct || cs.isScalar(t) {
-		return fmt.Errorf("gonf: bind %q: %s is not a struct", prefix, t)
-	}
-	return nil
-}
-
-// bindRoot binds the struct v to the keys under prefix and validates it. It
-// does not check for unknown keys; see checkUnknown.
-func (c *Config) bindRoot(prefix string, v reflect.Value, opts []BindOption) *binder {
+// bindRoot binds the struct v of model m to the keys under prefix and
+// validates it. It does not check for unknown keys; see checkUnknown. If m
+// has problems, it reports them and binds nothing.
+func (c *Config) bindRoot(prefix string, m *model, v reflect.Value, opts []BindOption) *binder {
 	b := &binder{
 		c:          c,
 		cs:         c.converters,
@@ -107,7 +106,13 @@ func (c *Config) bindRoot(prefix string, v reflect.Value, opts []BindOption) *bi
 	for _, opt := range opts {
 		opt(&b.options)
 	}
-	b.bindStruct(prefix, v)
+	if problems := m.problems(prefix); len(problems) > 0 {
+		// Without the fields bound, any key under prefix may be known.
+		b.problems = problems
+		b.open = append(b.open, prefix+".")
+		return b
+	}
+	b.bindStruct(prefix, m, v)
 	if len(b.problems) == 0 && c.validator != nil {
 		if err := c.validator(v.Addr().Interface()); err != nil {
 			b.fail(prefix, Origin{}, err)
@@ -249,47 +254,36 @@ func (b *binder) value(key string) (string, Origin, bool, error) {
 	return s, v.Origin, s != "", nil
 }
 
-// bind binds key to v. def is the default tag, nil if there is none.
-func (b *binder) bind(key string, def *string, v reflect.Value) {
+// bind binds key to v, of field f. bindRoot binds only models without
+// problems, so f has a valid model.
+func (b *binder) bind(key string, f field, v reflect.Value) {
 	b.known[key] = struct{}{}
-	t := v.Type()
-	if holdsSecret(t) {
+	if f.def != nil {
+		b.defaults[key] = *f.def
+	}
+	if f.m.isSecret {
 		b.secrets[key] = struct{}{}
 	}
-	if def != nil {
-		b.defaults[key] = *def
-	}
-	switch {
-	case t.Kind() == reflect.Pointer:
-		b.bindPointer(key, def, v)
-	case b.cs.isScalar(t):
-		b.bindScalar(key, def, v)
-	case t.Kind() == reflect.Slice:
-		b.bindSlice(key, def, v)
-	case isSecret(t):
-		b.fail(key, Origin{}, fmt.Errorf("unsupported type %s, a secret must hold a single value", t))
-	case def != nil:
-		b.fail(key, Origin{}, fmt.Errorf("default not supported for %s", t))
-	case t.Kind() == reflect.Struct:
-		b.bindStruct(key, v)
-	case t.Kind() == reflect.Map:
-		b.bindMap(key, v)
-	default:
-		b.fail(key, Origin{}, fmt.Errorf("unsupported type %s", t))
+	switch f.m.kind {
+	case kindPointer:
+		b.bindPointer(key, f, v)
+	case kindScalar:
+		b.bindScalar(key, f, v)
+	case kindList:
+		b.bindSlice(key, f, v)
+	case kindGroup:
+		b.bindStruct(key, f.m, v)
+	case kindMap:
+		b.bindMap(key, f, v)
 	}
 }
 
 // bindStruct binds the fields of v, then validates v if they had no
 // problems.
-func (b *binder) bindStruct(prefix string, v reflect.Value) {
+func (b *binder) bindStruct(prefix string, m *model, v reflect.Value) {
 	before := len(b.problems)
-	for _, f := range b.cs.fields(v.Type()) {
-		key := join(prefix, f.name)
-		if f.isEmbeddedPointer {
-			b.fail(key, Origin{}, fmt.Errorf("embedded pointer %s not supported, embed the struct", f.typ))
-			continue
-		}
-		b.bind(key, f.def, v.FieldByIndex(f.index))
+	for _, f := range m.fields {
+		b.bind(join(prefix, f.name), f, v.FieldByIndex(f.index))
 	}
 	if len(b.problems) > before {
 		return
@@ -301,7 +295,7 @@ func (b *binder) bindStruct(prefix string, v reflect.Value) {
 	}
 }
 
-func (b *binder) bindScalar(key string, def *string, v reflect.Value) {
+func (b *binder) bindScalar(key string, f field, v reflect.Value) {
 	s, origin, ok, err := b.value(key)
 	if err != nil {
 		b.fail(key, origin, err)
@@ -313,11 +307,14 @@ func (b *binder) bindScalar(key string, def *string, v reflect.Value) {
 		}
 		return
 	}
-	if def == nil {
+	switch {
+	case f.isRequired:
 		b.fail(key, Origin{}, ErrNotFound)
 		return
+	case f.def == nil:
+		return
 	}
-	s, err = b.c.expand(key, *def, b.reference)
+	s, err = b.c.expand(key, *f.def, b.reference)
 	if err != nil {
 		b.fail(key, Origin{}, fmt.Errorf("default: %w", err))
 		return
@@ -330,23 +327,17 @@ func (b *binder) bindScalar(key string, def *string, v reflect.Value) {
 	}
 }
 
-// bindPointer leaves v nil unless key has a value or a default. A pointer
-// type with a converter is converted as a whole.
-func (b *binder) bindPointer(key string, def *string, v reflect.Value) {
-	if def == nil && !b.present(key, v.Type(), nil) {
+// bindPointer leaves v nil unless key has a value or a default.
+func (b *binder) bindPointer(key string, f field, v reflect.Value) {
+	if f.def == nil && !b.present(key, f.m, nil) {
 		return
 	}
-	if _, ok := b.cs[v.Type()]; ok {
-		b.bindScalar(key, def, v)
-		return
-	}
-	elem := v.Type().Elem()
-	p := reflect.New(elem)
-	b.bind(key, def, p.Elem())
+	p := reflect.New(f.m.elem.typ)
+	b.bind(key, f.pointee(), p.Elem())
 	v.Set(p)
 }
 
-func (b *binder) bindSlice(key string, def *string, v reflect.Value) {
+func (b *binder) bindSlice(key string, f field, v reflect.Value) {
 	b.open = append(b.open, key+"[")
 	s, origin, ok, err := b.value(key)
 	switch {
@@ -354,33 +345,32 @@ func (b *binder) bindSlice(key string, def *string, v reflect.Value) {
 		b.fail(key, origin, err)
 		return
 	case ok:
-		b.bindList(key, s, origin, v)
+		b.bindList(key, s, origin, f.m, v)
 		return
 	}
-	if indices := b.indices(key, v.Type().Elem()); len(indices) > 0 {
+	if indices := b.indices(key, f.m.elem); len(indices) > 0 {
 		out := reflect.MakeSlice(v.Type(), len(indices), len(indices))
 		for i, n := range indices {
-			b.bind(index(key, n), nil, out.Index(i))
+			b.bind(index(key, n), f.element(), out.Index(i))
 		}
 		v.Set(out)
 		return
 	}
-	if def == nil {
+	if f.def == nil {
 		return
 	}
-	s, err = b.c.expand(key, *def, b.reference)
+	s, err = b.c.expand(key, *f.def, b.reference)
 	if err != nil {
 		b.fail(key, Origin{}, fmt.Errorf("default: %w", err))
 		return
 	}
-	b.bindList(key, s, Origin{}, v)
+	b.bindList(key, s, Origin{}, f.m, v)
 }
 
-// bindList binds the comma-separated list s to the slice v.
-func (b *binder) bindList(key, s string, origin Origin, v reflect.Value) {
-	elem := v.Type().Elem()
-	if !b.cs.isScalar(elem) {
-		err := fmt.Errorf("comma-separated value for a list of %s, use indexed keys such as %s", elem, index(key, 0))
+// bindList binds the comma-separated list s to the slice v of model m.
+func (b *binder) bindList(key, s string, origin Origin, m *model, v reflect.Value) {
+	if m.elem.kind != kindScalar {
+		err := fmt.Errorf("comma-separated value for a list of %s, use indexed keys such as %s", m.elem.typ, index(key, 0))
 		b.fail(key, origin, err)
 		return
 	}
@@ -397,13 +387,9 @@ func (b *binder) bindList(key, s string, origin Origin, v reflect.Value) {
 	v.Set(out)
 }
 
-func (b *binder) bindMap(key string, v reflect.Value) {
+func (b *binder) bindMap(key string, f field, v reflect.Value) {
 	t := v.Type()
-	if !b.cs.isScalar(t.Key()) {
-		b.fail(key, Origin{}, fmt.Errorf("unsupported map key type %s", t.Key()))
-		return
-	}
-	isGroupValue := b.cs.isGroup(t.Elem())
+	isGroupValue := f.m.elem.isGroup()
 	prefix := key + "."
 	b.open = append(b.open, prefix)
 	var names []string
@@ -419,7 +405,7 @@ func (b *binder) bindMap(key string, v reflect.Value) {
 	m := reflect.MakeMapWithSize(t, len(names))
 	for _, name := range names {
 		entry := prefix + name
-		if !b.present(entry, t.Elem(), nil) {
+		if !b.present(entry, f.m.elem, nil) {
 			continue
 		}
 		mk := reflect.New(t.Key()).Elem()
@@ -428,7 +414,7 @@ func (b *binder) bindMap(key string, v reflect.Value) {
 			continue
 		}
 		mv := reflect.New(t.Elem()).Elem()
-		b.bind(entry, nil, mv)
+		b.bind(entry, f.entry(), mv)
 		m.SetMapIndex(mk, mv)
 	}
 	if m.Len() > 0 {
@@ -513,7 +499,7 @@ func distance(a, b string) int {
 // indices returns the indices of key[n] in ascending order: those found
 // among the keys and those found by trying key[0], key[1], ..., which finds
 // environment variables such as HOSTS_0_.
-func (b *binder) indices(key string, elem reflect.Type) []int {
+func (b *binder) indices(key string, elem *model) []int {
 	var out []int
 	open := key + "["
 	for _, k := range b.c.keys {
@@ -538,36 +524,35 @@ func (b *binder) indices(key string, elem reflect.Type) []int {
 	return out
 }
 
-// present reports whether key has a value of type t: a value for a scalar,
-// any key under it for a struct, slice or map. Struct fields are tried one
-// by one, so environment variables count too. stack holds the struct types
-// being checked and stops recursive types.
-func (b *binder) present(key string, t reflect.Type, stack []reflect.Type) bool {
-	for t.Kind() == reflect.Pointer && !b.cs.isScalar(t) {
-		t = t.Elem()
-	}
-	switch {
-	case b.cs.isScalar(t):
+// present reports whether key has a value of model m: a value for a
+// scalar, any key under it for a group, list or map. Fields are tried one
+// by one, so environment variables count too. stack holds the groups being
+// checked and stops recursive types.
+func (b *binder) present(key string, m *model, stack []*model) bool {
+	switch m.kind {
+	case kindScalar:
 		_, _, ok, err := b.value(key)
 		return ok || err != nil
-	case t.Kind() == reflect.Struct:
+	case kindPointer:
+		return b.present(key, m.elem, stack)
+	case kindGroup:
 		if b.hasKeysWithPrefix(key + ".") {
 			return true
 		}
-		if slices.Contains(stack, t) {
+		if slices.Contains(stack, m) {
 			return false
 		}
-		stack = append(stack, t)
-		for _, f := range b.cs.fields(t) {
-			if !f.isEmbeddedPointer && b.present(join(key, f.name), f.typ, stack) {
+		stack = append(stack, m)
+		for _, f := range m.fields {
+			if b.present(join(key, f.name), f.m, stack) {
 				return true
 			}
 		}
 		return false
-	case t.Kind() == reflect.Slice:
+	case kindList:
 		_, _, ok, err := b.value(key)
-		return ok || err != nil || b.hasKeysWithPrefix(key+"[") || b.present(index(key, 0), t.Elem(), stack)
-	case t.Kind() == reflect.Map:
+		return ok || err != nil || b.hasKeysWithPrefix(key+"[") || b.present(index(key, 0), m.elem, stack)
+	case kindMap:
 		return b.hasKeysWithPrefix(key + ".")
 	}
 	return false
@@ -575,54 +560,6 @@ func (b *binder) present(key string, t reflect.Type, stack []reflect.Type) bool 
 
 func (b *binder) hasKeysWithPrefix(prefix string) bool {
 	return slices.ContainsFunc(b.c.keys, func(k string) bool { return strings.HasPrefix(k, prefix) })
-}
-
-// structField is a field Bind binds.
-type structField struct {
-	name  string
-	index []int
-	typ   reflect.Type
-	// def is the default tag, nil if there is none.
-	def               *string
-	isEmbeddedPointer bool
-}
-
-// fields returns the fields of struct type t, with embedded structs
-// flattened.
-func (cs converters) fields(t reflect.Type) []structField {
-	var out []structField
-	for i := range t.NumField() {
-		f := t.Field(i)
-		name, hasTag := f.Tag.Lookup("cfg")
-		if name == "-" {
-			continue
-		}
-		if f.Anonymous && !hasTag {
-			switch {
-			case f.Type.Kind() == reflect.Struct && !cs.isScalar(f.Type):
-				for _, sub := range cs.fields(f.Type) {
-					sub.index = append([]int{i}, sub.index...)
-					out = append(out, sub)
-				}
-				continue
-			case f.Type.Kind() == reflect.Pointer && f.Type.Elem().Kind() == reflect.Struct:
-				out = append(out, structField{name: kebab(f.Name), typ: f.Type, isEmbeddedPointer: true})
-				continue
-			}
-		}
-		if !f.IsExported() {
-			continue
-		}
-		if name == "" {
-			name = kebab(f.Name)
-		}
-		sf := structField{name: name, index: []int{i}, typ: f.Type}
-		if def, ok := f.Tag.Lookup("default"); ok {
-			sf.def = &def
-		}
-		out = append(out, sf)
-	}
-	return out
 }
 
 // convert parses s into v, which must be addressable and of a scalar type.
@@ -760,21 +697,6 @@ func (cs converters) isScalar(t reflect.Type) bool {
 
 func isText(t reflect.Type) bool {
 	return reflect.PointerTo(t).Implements(textType)
-}
-
-// isGroup reports whether values of type t live under several keys, so that
-// a map entry of type t is named by one key segment only.
-func (cs converters) isGroup(t reflect.Type) bool {
-	for t.Kind() == reflect.Pointer && !cs.isScalar(t) {
-		t = t.Elem()
-	}
-	switch {
-	case cs.isScalar(t):
-		return false
-	case t.Kind() == reflect.Slice:
-		return cs.isGroup(t.Elem())
-	}
-	return t.Kind() == reflect.Struct || t.Kind() == reflect.Map
 }
 
 // mapEntry returns the name of the map entry that the key rest (the part

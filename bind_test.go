@@ -420,6 +420,12 @@ func TestBind_Recursive(t *testing.T) {
 	}
 }
 
+// selfPointer and selfList contain themselves, which Bind cannot read.
+type (
+	selfPointer *selfPointer
+	selfList    []selfList
+)
+
 func TestBind_Errors(t *testing.T) {
 	t.Parallel()
 	type small struct{ N int8 }
@@ -427,11 +433,22 @@ func TestBind_Errors(t *testing.T) {
 		F func()
 		M map[[2]int]string
 	}
-	type badDefaults struct {
+	type groupDefault struct {
 		Pool pool          `default:"x"`
 		D    time.Duration `default:"5"`
-		R    string        `default:"${missing}"`
-		L    []int         `default:"${missing}"`
+	}
+	type badDefaults struct {
+		D time.Duration `default:"5"`
+		R string        `default:"${missing}"`
+		L []int         `default:"${missing}"`
+	}
+	type hiddenInvalid struct {
+		Pool *struct{ F func() }
+		L    []struct{ C chan int }
+		M    map[string]struct{ C chan int }
+		P    selfPointer
+		S    selfList
+		N    int
 	}
 	type embeddedPointer struct{ *Common }
 	type structList struct{ S []pool }
@@ -491,10 +508,24 @@ func TestBind_Errors(t *testing.T) {
   x.m: unsupported map key type [2]int`,
 		},
 		{
+			name: "invalid types without values",
+			bind: bindAs[hiddenInvalid],
+			expected: `gonf: bind "x": 5 problems:
+  x.pool.f: unsupported type func()
+  x.l[<n>].c: unsupported type chan int
+  x.m.<name>.c: unsupported type chan int
+  x.p: unsupported type gonf_test.selfPointer, it contains itself
+  x.s: unsupported type gonf_test.selfList, it contains itself`,
+		},
+		{
+			name:     "default for a group comes before values",
+			bind:     bindAs[groupDefault],
+			expected: `gonf: bind "x": x.pool: default not supported for gonf_test.pool`,
+		},
+		{
 			name: "bad defaults",
 			bind: bindAs[badDefaults],
-			expected: `gonf: bind "x": 4 problems:
-  x.pool: default not supported for gonf_test.pool
+			expected: `gonf: bind "x": 3 problems:
   x.d: default: invalid duration "5", want e.g. 5s or 1h30m
   x.r: default: unresolved reference "missing"
   x.l: default: unresolved reference "missing"`,

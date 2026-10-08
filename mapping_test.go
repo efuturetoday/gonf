@@ -117,6 +117,15 @@ gonf: bind "req": req.n: required, no value`,
 			expectedError: "gonf: nil mapping\ngonf: bind \"n\": int is not a struct",
 		},
 		{
+			name:   "invalid mapping keeps its keys known",
+			values: map[string]string{"db.extra": "x", "db.broken": "1"},
+			mappings: []gonf.AnyMapping{
+				gonf.NewMapping[dbExtra]("db"),
+				gonf.NewMapping[struct{ Broken func() }]("db"),
+			},
+			expectedError: `gonf: bind "db": db.broken: unsupported type func()`,
+		},
+		{
 			name:          "embedded pointer",
 			mappings:      []gonf.AnyMapping{gonf.NewMapping[struct{ *cacheConfig }]("e")},
 			expectedError: `gonf: bind "e": e.cache-config: embedded pointer *gonf_test.cacheConfig not supported, embed the struct`,

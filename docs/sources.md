@@ -38,6 +38,7 @@ cfg, err := gonf.Load(ctx,
 
 | Source | Ordinal | Name |
 | --- | --- | --- |
+| `flagsource.New(fs)` | 400 | `flag:` |
 | `env.New()` | 300 | `env:` |
 | `file.New(path, format)` | 100 | `file:<path>` |
 | `file.FS(fsys, path, format)`, e.g. an `embed.FS` | 100 | `fs:<path>` |
@@ -105,6 +106,31 @@ with functions in expressions.
 
 A Source of your own with such names implements `gonf.MappedSource`; it
 gets the keys and returns its values under them.
+
+## Command-line flags
+
+`flagsource.New(fs)` (`source/flagsource`) reads the flags of a standard
+`flag.FlagSet` that were set on the command line. The flag name is the key:
+`-db.url=postgres://x` sets `db.url`. Flags that were not set give no key,
+so they never hide a value of another Source. A flag has ordinal 400, so it
+overrides the environment.
+
+`flagsource.Define` defines one flag per key, with the description as help
+text and the default shown by `PrintDefaults`. It skips keys with `<name>` or
+`<n>`, and never shows the default of a secret. All flags are strings; gonf
+converts the type when it binds. A flag that matches no key is reported as
+an unknown key, like any other Source.
+
+```go
+opts := []boot.Option{boot.WithMappings(db.Mapping)}
+props, _ := boot.Describe(opts...)
+
+fs := flag.NewFlagSet("app", flag.ExitOnError)
+_ = flagsource.Define(fs, props)
+_ = fs.Parse(os.Args[1:]) // boot does not parse
+
+cfg, err := boot.Load(ctx, append(opts, boot.WithFlags(fs))...)
+```
 
 ## Expressions
 

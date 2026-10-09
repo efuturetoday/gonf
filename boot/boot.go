@@ -3,7 +3,8 @@
 //
 // Load reads, highest priority first:
 //
-//	300  environment variables (env.New)
+//	400  command-line flags (WithFlags, only if given)
+//	300 environment variables (env.New)
 //	295  .env in the working directory (format/dotenv, env key names)
 //	260  config/app.<ext> in the working directory
 //	250  app.<ext> in an embedded file system (WithFS)

@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 )
 
 // Option configures Load.
@@ -117,7 +118,8 @@ func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
 		return nil, nil, err
 	}
 
-	loaded, err := loadSources(ctx, o.sources)
+	keys := sync.OnceValue(func() []string { return knownKeys(cs, o.mappings, o.profileKey) })
+	loaded, err := loadSources(ctx, o.sources, keys)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -131,7 +133,7 @@ func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
 	var created []Source
 	if len(o.factories) > 0 {
 		var late []loadedSource
-		late, created, err = runFactories(ctx, o.factories, cfg)
+		late, created, err = runFactories(ctx, o.factories, cfg, keys)
 		if err != nil {
 			return nil, created, err
 		}
@@ -171,7 +173,7 @@ func isSame(a, b Source) bool {
 // runFactories passes cfg to every factory and loads the Sources they
 // return. It runs all factories and reports all failures together. It
 // returns the Sources the factories created, also on error.
-func runFactories(ctx context.Context, factories []SourceFactory, cfg *Config) ([]loadedSource, []Source, error) {
+func runFactories(ctx context.Context, factories []SourceFactory, cfg *Config, keys func() []string) ([]loadedSource, []Source, error) {
 	var created []Source
 	var errs []error
 	for _, factory := range factories {
@@ -189,15 +191,16 @@ func runFactories(ctx context.Context, factories []SourceFactory, cfg *Config) (
 		}
 		created = append(created, srcs...)
 	}
-	late, err := loadSources(ctx, created)
+	late, err := loadSources(ctx, created, keys)
 	if err != nil {
 		errs = append(errs, err)
 	}
 	return late, created, errors.Join(errs...)
 }
 
-// loadSources loads srcs in registration order.
-func loadSources(ctx context.Context, srcs []Source) ([]loadedSource, error) {
+// loadSources loads srcs in registration order. A MappedSource gets the
+// result of keys.
+func loadSources(ctx context.Context, srcs []Source, keys func() []string) ([]loadedSource, error) {
 	loaded := make([]loadedSource, 0, len(srcs))
 	var errs []error
 	for _, src := range srcs {
@@ -212,7 +215,7 @@ func loadSources(ctx context.Context, srcs []Source) ([]loadedSource, error) {
 			errs = append(errs, &SourceError{Source: src.Name(), Err: ErrInvalidSourceName})
 			continue
 		}
-		values, err := src.Load(ctx)
+		values, err := loadValues(ctx, src, keys)
 		if err != nil {
 			errs = append(errs, &SourceError{Source: src.Name(), Err: err})
 			continue
@@ -230,11 +233,18 @@ func loadSources(ctx context.Context, srcs []Source) ([]loadedSource, error) {
 	return loaded, nil
 }
 
+// loadValues loads src, a MappedSource with the result of keys.
+func loadValues(ctx context.Context, src Source, keys func() []string) (map[string]Value, error) {
+	if m, ok := src.(MappedSource); ok {
+		return m.LoadMapped(ctx, keys())
+	}
+	return src.Load(ctx)
+}
+
 // newLoadedSource validates the profile keys of values and fills in the
 // Origin of every value.
 func newLoadedSource(src Source, values map[string]Value) (loadedSource, error) {
 	s := loadedSource{src: src, ordinal: src.Ordinal(), values: make(map[string]Value, len(values))}
-	s.mapper, _ = src.(KeyMapper)
 	for key, v := range values {
 		if strings.HasPrefix(key, "%") {
 			if _, _, err := splitProfileKey(key); err != nil {

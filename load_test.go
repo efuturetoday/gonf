@@ -9,6 +9,7 @@ import (
 
 	"github.com/efuturetoday/gonf"
 	"github.com/efuturetoday/gonf/source"
+	"github.com/efuturetoday/gonf/source/env"
 	"github.com/efuturetoday/gonf/source/memory"
 )
 
@@ -20,9 +21,14 @@ func (s failingSource) Load(context.Context) (map[string]gonf.Value, error) {
 	return nil, errors.New("boom")
 }
 
-// upperSource is a KeyMapper Source with environment-style keys, so tests
-// do not need the process environment.
+// upperSource is a MappedSource with environment-style keys, so tests do
+// not need the process environment.
 type upperSource map[string]string
+
+func (s upperSource) LoadMapped(ctx context.Context, keys []string) (map[string]gonf.Value, error) {
+	values, err := s.Load(ctx)
+	return env.Match(values, keys), err
+}
 
 func (s upperSource) Name() string { return "test:upper" }
 func (s upperSource) Ordinal() int { return 300 }
@@ -35,6 +41,23 @@ func (s upperSource) Load(context.Context) (map[string]gonf.Value, error) {
 }
 func (s upperSource) MapKey(key string) string {
 	return strings.ToUpper(strings.NewReplacer(".", "_", "%", "_", "-", "_", "[", "_", "]", "_").Replace(key))
+}
+
+// topLevel makes the keys a and c known, so that a MappedSource provides
+// them.
+type topLevel struct {
+	A, C string `default:""`
+}
+
+// knownDB makes db.url, db.user and db.port known.
+type knownDB struct {
+	URL, User, Port string `default:""`
+}
+
+func withTopLevel() gonf.Option { return gonf.WithMappings(gonf.NewMapping[topLevel]("")) }
+
+func withKnownDB() gonf.Option {
+	return gonf.WithMappings(gonf.NewMapping[knownDB]("db", gonf.AllowUnknown()))
 }
 
 func TestWithProfiles(t *testing.T) {
@@ -118,7 +141,7 @@ func TestWithProfiles(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			cfg, err := gonf.Load(context.Background(), gonf.WithSources(tt.sources...), gonf.WithProfiles(tt.profiles...))
+			cfg, err := gonf.Load(context.Background(), gonf.WithSources(tt.sources...), gonf.WithProfiles(tt.profiles...), withTopLevel())
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -2,7 +2,8 @@
 //
 // Document-based Sources are built from independent parts: a ReadFunc that
 // delivers the bytes (where), a Format that parses them (how) and,
-// optionally, a key naming scheme (WithKeyMapper). New combines them. Providers live in subpackages (source/file,
+// optionally, a key naming scheme (WithKeyMatcher). New combines them.
+// Providers live in subpackages (source/file,
 // source/env, source/memory), formats in format/... packages.
 package source
 
@@ -61,23 +62,41 @@ func New(name string, read ReadFunc, format Format, opts ...Option) gonf.Source 
 		read:   read,
 		format: format,
 	}
-	if s.mapKey != nil {
+	if s.match != nil {
 		return mappedDocSource{s}
 	}
 	return s
 }
 
-// mappedDocSource is a docSource with WithKeyMapper. It is a separate type
-// so that Sources without a mapper do not implement gonf.KeyMapper.
+// mappedDocSource is a docSource with WithKeyMatcher. It is a separate type
+// so that Sources without a matcher do not implement gonf.MappedSource.
 type mappedDocSource struct {
 	*docSource
 }
 
-var _ gonf.KeyMapper = mappedDocSource{}
+var _ gonf.MappedSource = mappedDocSource{}
 
-func (s mappedDocSource) MapKey(key string) string { return s.mapKey(key) }
+// LoadMapped implements gonf.MappedSource: it parses the content, matches
+// the keys, then applies the profile.
+func (s mappedDocSource) LoadMapped(ctx context.Context, keys []string) (map[string]gonf.Value, error) {
+	values, err := s.parse(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.withProfile(s.match(values, keys))
+}
 
 func (s *docSource) Load(ctx context.Context) (map[string]gonf.Value, error) {
+	values, err := s.parse(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.withProfile(values)
+}
+
+// parse reads and parses the content; a missing optional document has no
+// values.
+func (s *docSource) parse(ctx context.Context) (map[string]gonf.Value, error) {
 	data, err := s.read(ctx)
 	s.see(data, err)
 	if err != nil {
@@ -88,9 +107,13 @@ func (s *docSource) Load(ctx context.Context) (map[string]gonf.Value, error) {
 	}
 	// Tolerate a UTF-8 BOM written by some editors.
 	data = bytes.TrimPrefix(data, []byte("\xEF\xBB\xBF"))
-	values, err := s.format.Parse(s.Name(), data)
-	if err != nil || s.Profile() == "" {
-		return values, err
+	return s.format.Parse(s.Name(), data)
+}
+
+// withProfile applies the profile given with WithProfile to values.
+func (s *docSource) withProfile(values map[string]gonf.Value) (map[string]gonf.Value, error) {
+	if s.Profile() == "" {
+		return values, nil
 	}
 	return withProfile(s.Profile(), values)
 }
@@ -133,13 +156,17 @@ func (s *docSource) see(data []byte, err error) bool {
 }
 
 // withProfile prefixes every key with "%profile.". The name rule matches
-// gonf's: no '.', ',' or whitespace.
+// gonf's: no '.', ',' or whitespace. A key with a profile of its own, such
+// as %dev.db.url or _DEV_DB_URL in a .env file, is an error.
 func withProfile(profile string, values map[string]gonf.Value) (map[string]gonf.Value, error) {
 	if strings.ContainsAny(profile, ".,") || strings.IndexFunc(profile, unicode.IsSpace) >= 0 {
 		return nil, fmt.Errorf("invalid profile name %q", profile)
 	}
 	out := make(map[string]gonf.Value, len(values))
 	for k, v := range values {
+		if strings.HasPrefix(k, "%") {
+			return nil, fmt.Errorf("key %q has a profile, but every key of the source belongs to profile %q", k, profile)
+		}
 		out["%"+profile+"."+k] = v
 	}
 	return out, nil

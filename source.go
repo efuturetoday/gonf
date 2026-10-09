@@ -47,11 +47,24 @@ type Source interface {
 	Load(ctx context.Context) (map[string]Value, error)
 }
 
-// KeyMapper is implemented by Sources whose keys follow their own naming
-// scheme, such as environment variables. A key not found in such a Source is
-// looked up again under MapKey(key), e.g. "DB_POOL_MAX_SIZE" for
-// "db.pool.max-size" or "_DEV_DB_URL" for "%dev.db.url". MapKey is called on
-// every lookup and must be safe for concurrent use.
+// MappedSource is a Source whose names are not keys, such as environment
+// variables. Load calls LoadMapped instead of Load, with the keys it knows:
+// the keys of the Mappings given with WithMappings and the key of
+// WithProfileKey. Other names are not reachable through such a Source. In a key, <name> stands for the name of a map entry and
+// <n> for the index of a list element, as in db.pools.<name>.url; a list
+// of single values comes as db.hosts and db.hosts[<n>]. LoadMapped returns
+// its values under the keys their names match, with <name> and <n> filled
+// in, such as db.pools.main.url for DB_POOLS_MAIN_URL, and "%profile.key"
+// for a value of a profile. Names that match no key are left out.
+type MappedSource interface {
+	Source
+	LoadMapped(ctx context.Context, keys []string) (map[string]Value, error)
+}
+
+// KeyMapper is implemented by Sources whose names follow their own naming
+// scheme, such as the environment. MapKey(key) is the name of key in that
+// scheme, e.g. "DB_POOL_MAX_SIZE" for "db.pool.max-size". Describe and
+// Explain show it as Property.Env; values are never looked up by it.
 type KeyMapper interface {
 	MapKey(key string) string
 }

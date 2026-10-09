@@ -1,5 +1,7 @@
 package source
 
+import "github.com/efuturetoday/gonf"
+
 // DefaultOrdinal is the ordinal of a Source built with New unless
 // overridden with WithOrdinal. Providers define their own defaults.
 const DefaultOrdinal = 100
@@ -26,19 +28,24 @@ func Optional() Option {
 
 // WithProfile makes every key of a document Source (New and providers built
 // on it) belong to profile, as if written "%profile.key". Use it for
-// profile files such as app-dev.properties. Ignored by other
-// Sources.
+// profile files such as app-dev.properties. A key with a profile of its
+// own is an error of Load. Ignored by other Sources.
 func WithProfile(profile string) Option {
 	return func(m *Meta) { m.profile = profile }
 }
 
-// WithKeyMapper makes a document Source (New and providers built on it)
-// implement gonf.KeyMapper with mapKey, so its keys may follow another
-// naming scheme. With env.MapKey, "DB_URL" in a .env file is found as
-// "db.url". mapKey must be safe for concurrent use. Ignored by other
-// Sources.
-func WithKeyMapper(mapKey func(key string) string) Option {
-	return func(m *Meta) { m.mapKey = mapKey }
+// KeyMatcher returns values, whose keys follow another naming scheme,
+// under the keys of gonf they match; see gonf.MappedSource. env.Match is
+// one.
+type KeyMatcher func(values map[string]gonf.Value, keys []string) map[string]gonf.Value
+
+// WithKeyMatcher makes a document Source (New and providers built on it) a
+// gonf.MappedSource whose keys follow another naming scheme: it parses the
+// content, then passes the values to match. With env.Match, "DB_URL" in a
+// .env file becomes "db.url". match must be safe for concurrent use.
+// Ignored by other Sources.
+func WithKeyMatcher(match KeyMatcher) Option {
+	return func(m *Meta) { m.match = match }
 }
 
 // WithTrigger makes a document Source (New and providers built on it) check
@@ -57,7 +64,7 @@ type Meta struct {
 	ordinal    int
 	isOptional bool
 	profile    string
-	mapKey     func(key string) string
+	match      KeyMatcher
 	trigger    Trigger
 }
 

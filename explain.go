@@ -108,21 +108,13 @@ func (c *Config) effective(key string, candidates []Value, def *Value) (string, 
 	return s, def.Origin, nil
 }
 
-// Explanations explains every key of the Sources, except those of a
-// KeyMapper Source such as the environment, and every key a Mapping bound
-// or referenced that has a value or a default, sorted by key. Environment
-// variables that no Mapping reads, such as PATH, are left out.
+// Explanations explains every key of the Sources and every key a Mapping
+// bound or referenced that has a value or a default, sorted by key.
+// Environment variables that match no key, such as PATH, are no keys.
 func (c *Config) Explanations() []Explanation {
-	keys := map[string]struct{}{}
-	for _, s := range c.sources {
-		if s.mapper != nil {
-			continue
-		}
-		for key := range s.values {
-			if base, ok := activeKey(key, c.profiles); ok {
-				keys[base] = struct{}{}
-			}
-		}
+	keys := make(map[string]struct{}, len(c.keys))
+	for _, key := range c.keys {
+		keys[key] = struct{}{}
 	}
 	for key := range c.read {
 		hasDefault := c.values[key].def != nil

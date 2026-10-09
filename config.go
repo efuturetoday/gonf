@@ -37,20 +37,6 @@ type loadedSource struct {
 	src     Source
 	ordinal int
 	values  map[string]Value
-	// mapper is the Source itself if it implements KeyMapper.
-	mapper KeyMapper
-}
-
-// lookup returns the value for key, trying MapKey(key) if key is missing.
-func (s loadedSource) lookup(key string) (Value, bool) {
-	if v, ok := s.values[key]; ok {
-		return v, true
-	}
-	if s.mapper == nil {
-		return Value{}, false
-	}
-	v, ok := s.values[s.mapper.MapKey(key)]
-	return v, ok
 }
 
 // newConfig builds a Config from Sources in registration order.
@@ -94,8 +80,8 @@ func (c *Config) Lookup(key string) (Value, bool) {
 }
 
 // Keys returns all known keys, sorted. Values of active profiles appear
-// under their base key; keys of a KeyMapper Source appear as the Source
-// delivers them (e.g. "DB_URL").
+// under their base key. Environment variables appear under the keys they
+// matched (see MappedSource), such as db.url for DB_URL.
 func (c *Config) Keys() []string {
 	return slices.Clone(c.keys)
 }
@@ -124,7 +110,7 @@ func (c *Config) all(key string) iter.Seq[Value] {
 		// emit yields the value of name from every Source in group.
 		emit := func(group []loadedSource, name, profile string) bool {
 			for _, src := range group {
-				v, ok := src.lookup(name)
+				v, ok := src.values[name]
 				if !ok {
 					continue
 				}
@@ -155,11 +141,11 @@ func (c *Config) all(key string) iter.Seq[Value] {
 }
 
 // keyMapper returns the Source of the highest priority that is a
-// KeyMapper, nil if there is none.
+// KeyMapper, nil if there is none. It names Property.Env only.
 func (c *Config) keyMapper() KeyMapper {
 	for _, s := range c.sources {
-		if s.mapper != nil {
-			return s.mapper
+		if m, ok := s.src.(KeyMapper); ok {
+			return m
 		}
 	}
 	return nil

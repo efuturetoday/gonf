@@ -25,8 +25,9 @@ const (
 //	${name::value}  value decrypted by the SecretHandler name
 //	$${             a literal "${"
 //
-// References are resolved like Lookup, so profiles and KeyMappers apply:
-// ${HOME} finds the environment variable. If key itself has no value, the
+// References are resolved like Lookup, so profiles apply. An environment
+// variable is found only under a key it matched, such as ${db.port} for
+// DB_PORT (see MappedSource). If key itself has no value, the
 // error matches ErrNotFound; a missing reference, a cycle or a malformed
 // expression is reported with the chain of keys involved. One Get resolves
 // at most 1000 references and builds at most 1 MiB; beyond that it returns

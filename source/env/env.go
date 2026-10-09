@@ -1,6 +1,6 @@
-// Package env provides the process environment as a gonf Source (New) and
-// the environment variable naming scheme (MapKey), which .env files use too
-// (see format/dotenv).
+// Package env provides the process environment as a gonf Source (New), the
+// environment variable naming scheme (MapKey) and the matching of variable
+// names against keys (Match), which .env files use too (see format/dotenv).
 package env
 
 import (
@@ -19,24 +19,29 @@ type envSource struct {
 	source.Meta
 }
 
-var _ gonf.KeyMapper = (*envSource)(nil)
+var (
+	_ gonf.MappedSource = (*envSource)(nil)
+	_ gonf.KeyMapper    = (*envSource)(nil)
+)
 
-// New returns a Source with all process environment variables.
+// New returns a Source with the process environment variables.
 //
-// Keys are kept as they are (e.g. "DB_URL"). The Source implements
-// gonf.KeyMapper, so a lookup of "db.url" finds DB_URL (see MapKey).
+// gonf.Load calls LoadMapped, which returns the variables under the keys
+// they match (see Match): DB_URL as db.url, DB_POOLS_MAIN_URL as
+// db.pools.main.url. Variables that match no key, such as PATH, are left
+// out. Load returns all variables under their names.
 func New(opts ...source.Option) gonf.Source {
 	return &envSource{Meta: source.NewMeta("env:", Ordinal, opts...)}
 }
 
-// MapKey implements gonf.KeyMapper with the package function MapKey.
+// MapKey implements gonf.KeyMapper with the package function MapKey, so
+// Describe shows the variable of a key.
 func (s *envSource) MapKey(key string) string { return MapKey(key) }
 
 // MapKey returns the environment variable name for key: letters upper case,
 // digits kept, every other character replaced by '_'. "db.pool.max-size"
 // becomes "DB_POOL_MAX_SIZE", "%dev.db.url" becomes "_DEV_DB_URL" and
-// "hosts[0]" becomes "HOSTS_0_". Pass it to
-// source.WithKeyMapper for other Sources with environment-style keys.
+// "hosts[0]" becomes "HOSTS_0_".
 func MapKey(key string) string {
 	var b strings.Builder
 	b.Grow(len(key))
@@ -51,6 +56,15 @@ func MapKey(key string) string {
 		}
 	}
 	return b.String()
+}
+
+// LoadMapped implements gonf.MappedSource: Load, then Match.
+func (s *envSource) LoadMapped(ctx context.Context, keys []string) (map[string]gonf.Value, error) {
+	values, err := s.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return Match(values, keys), nil
 }
 
 func (s *envSource) Load(context.Context) (map[string]gonf.Value, error) {

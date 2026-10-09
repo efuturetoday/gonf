@@ -32,13 +32,24 @@ const (
 	Key = "gonf.secret.aes-gcm.key"
 )
 
+// KeyConfig holds the key for Handler.
+type KeyConfig struct {
+	Key *gonf.Secret[string] `desc:"Key for ${aes-gcm::...} values."`
+}
+
+// Mapping binds KeyConfig to the prefix of Key. Registered with Handler,
+// it makes Key a known key, so the environment provides it as
+// GONF_SECRET_AES_GCM_KEY. boot registers it with its default handler.
+var Mapping = gonf.NewMapping[KeyConfig](strings.TrimSuffix(Key, ".key"))
+
 // nonceSize is the nonce length Encrypt uses, the standard one of GCM.
 const nonceSize = 12
 
 var errDecrypt = errors.New("wrong key or damaged value")
 
 // Handler is a gonf.SecretHandler that decrypts with the key the
-// configuration holds under Key. Any Source may provide the key, except
+// configuration holds under Key. Register Mapping with it so that the
+// environment can provide the key. Any Source may provide the key, except
 // the Source of the encrypted value: a key next to the values it protects
 // protects nothing. The key is used as written; it must not contain ${...}.
 func Handler(cfg *gonf.Config, value string, origin gonf.Origin) (string, error) {

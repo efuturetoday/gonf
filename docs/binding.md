@@ -51,7 +51,8 @@ type Config struct {
 ```
 
 Environment variables are found by their usual name: `DB_POOL_MAX_SIZE` for
-`db.pool.max-size`.
+`db.pool.max-size`. Only variables that match a key of a Mapping count; the
+others, such as `PATH`, are left out (see [Sources](sources.md#environment-variables)).
 
 ## Required, defaults and optional fields
 
@@ -89,6 +90,21 @@ db.replicas[1].host=r2
 ```
 
 A map key containing a dot is quoted: `db.servers."eu.west".port=8080`.
+
+Map entries and list elements also come from the environment. The
+variable names are matched against the keys of the Mapping:
+
+| Variable | Key |
+| --- | --- |
+| `DB_SERVERS_EU_PORT` | `db.servers.eu.port` |
+| `DB_SERVERS__EU_WEST__PORT` | `db.servers."eu_west".port` |
+| `DB_REPLICAS_2__HOST` | `db.replicas[2].host` |
+
+The entry name is the part between the map and the field, in lower case.
+Between double underscores it is quoted. An entry of a file is the same
+entry only if its name is the same: `DB_SERVERS_EU_PORT` overrides
+`db.servers.eu.port`, but `DB_SERVERS_EU_WEST_PORT` is the entry `eu_west`,
+not `eu-west`.
 
 ## Converters
 

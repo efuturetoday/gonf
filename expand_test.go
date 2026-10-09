@@ -108,6 +108,7 @@ func TestConfig_Get_ResolvesLikeLookup(t *testing.T) {
 			upperSource{"DB_PORT": "6543"},
 		),
 		gonf.WithProfiles("dev"),
+		withKnownDB(),
 	)
 	if err != nil {
 		t.Fatal(err)

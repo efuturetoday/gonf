@@ -77,9 +77,9 @@ type Mapping[T any] struct {
 // binds, such as a typo "db.pool.max-szie", is an error naming the closest
 // known key; AllowUnknown turns this check off. A key that a bound value
 // references, such as db.host in db.url=postgres://${db.host}/app,
-// is known. The check is skipped for an empty prefix and for environment
-// variable names such as DB_POOL_MAX_SIZ, which cannot be told apart from
-// variables for other programs. Finally, the validator given with
+// is known. The check is skipped for an empty prefix. An environment
+// variable with a typo, such as DB_POOL_MAX_SIZ, matches no key and is left
+// out (see MappedSource). Finally, the validator given with
 // WithValidator checks the whole struct.
 //
 // A field that is no Secret but whose value or default refers to a secret

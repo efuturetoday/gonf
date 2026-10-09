@@ -3,7 +3,7 @@
 // Keys in .env files are usually environment variable names such as DB_URL.
 // To find them as "db.url", give the Source the env naming scheme:
 //
-//	file.New(".env", dotenv.Format, source.WithKeyMapper(env.MapKey))
+//	file.New(".env", dotenv.Format, source.WithKeyMatcher(env.Match))
 //
 // A profile value is written with the env profile prefix (_DEV_DB_URL);
 // there are no .env files per profile.

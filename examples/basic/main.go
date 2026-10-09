@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/efuturetoday/gonf"
 	"github.com/efuturetoday/gonf/format/json"
@@ -23,6 +24,19 @@ import (
 	"github.com/efuturetoday/gonf/source/file"
 	"github.com/efuturetoday/gonf/source/memory"
 )
+
+// DB is the configuration under "db". Its Mapping makes the keys known, so
+// that DB_HOST and the other variables find them.
+type DB struct {
+	Host string
+	URL  string
+	Pool struct {
+		MaxSize int
+		Timeout time.Duration
+	}
+}
+
+var dbMapping = gonf.NewMapping[DB]("db")
 
 // exampleDir is the directory of this file, so the example finds its
 // config files regardless of the working directory it is started from.
@@ -35,6 +49,7 @@ func main() {
 	dir := exampleDir()
 	cfg, err := gonf.Load(context.Background(),
 		gonf.WithProfiles(strings.Split(os.Getenv("APP_PROFILE"), ",")...),
+		gonf.WithMappings(dbMapping),
 		gonf.WithSources(
 			memory.Defaults(map[string]string{
 				"db.pool.max-size": "10",

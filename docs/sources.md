@@ -53,7 +53,7 @@ Options for these Sources:
 | `source.WithName(name)` | another name, starting with a scheme such as `file:` |
 | `source.Optional()` | a missing file yields no values instead of an error |
 | `source.WithProfile("dev")` | every key belongs to the profile `dev` |
-| `source.WithKeyMapper(env.MapKey)` | keys are written like environment variables, as in `.env` |
+| `source.WithKeyMatcher(env.Match)` | keys are written like environment variables, as in `.env` |
 | `source.WithTrigger(source.Every(5*time.Second))` | while `gonf.Watch` watches, check for changes every 5 s instead of every 2 s |
 
 ## Formats
@@ -74,7 +74,7 @@ value has its line as location.
 
 **`.env`** (`format/dotenv`): `KEY=value`, `export KEY=value`, double quotes
 with escapes, single quotes taken literally, `#` comments. Use it with
-`source.WithKeyMapper(env.MapKey)` so that `DB_URL` is found as `db.url`.
+`source.WithKeyMatcher(env.Match)` so that `DB_URL` becomes `db.url`.
 
 A format is a function from bytes to keys; implement `source.Format` for
 another one.
@@ -89,6 +89,22 @@ character other than letters and digits replaced by `_`:
 | `db.pool.max-size` | `DB_POOL_MAX_SIZE` |
 | `%dev.db.url` | `_DEV_DB_URL` |
 | `db.hosts[0]` | `DB_HOSTS_0_` |
+
+gonf works with these keys only. The environment and `.env` turn their
+names into keys once, when they are loaded, by matching them against the
+keys `Load` knows: those of the Mappings and the profile key. Map entries and list elements match too, so
+`DB_POOLS_MAIN_URL` becomes `db.pools.main.url` for a map field `Pools`;
+see [Binding](binding.md#types). Variables that match no key, such as
+`PATH`, are left out: they are not in `cfg.Keys()`, and `${HOME}` or
+`cfg.Get("HOME")` does not find them.
+
+So `cfg.Get` and `${...}` find any key of a file as before, but a key from
+the environment only if a Mapping has it. To set a key from the
+environment, give it a Mapping. Explicit access to other variables comes
+with functions in expressions.
+
+A Source of your own with such names implements `gonf.MappedSource`; it
+gets the keys and returns its values under them.
 
 ## Expressions
 
@@ -121,7 +137,8 @@ For content in a known format, `source.New(name, read, format)` is enough.
 
 A Source that needs configuration itself, such as a Vault Source whose
 address is in `app.properties`, is created by a factory. It runs after the
-other Sources are loaded and reads them:
+other Sources are loaded and reads them. The Mapping of `vault` lets the
+environment set the address too:
 
 ```go
 vault := func(ctx context.Context, cfg *gonf.Config) ([]gonf.Source, error) {
@@ -135,5 +152,11 @@ vault := func(ctx context.Context, cfg *gonf.Config) ([]gonf.Source, error) {
 	return []gonf.Source{newVaultSource(addr)}, nil
 }
 
-cfg, err := boot.Load(ctx, boot.With(gonf.WithFactories(vault)))
+type Vault struct {
+	Address string `default:""`
+}
+
+var vaultMapping = gonf.NewMapping[Vault]("vault")
+
+cfg, err := boot.Load(ctx, boot.WithMappings(vaultMapping), boot.With(gonf.WithFactories(vault)))
 ```

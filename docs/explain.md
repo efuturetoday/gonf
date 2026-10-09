@@ -63,4 +63,4 @@ printed or sent as it is.
 
 For the raw data without masking, `cfg.Lookup(key)` returns the winning
 value with its Origin, `cfg.Candidates(key)` all values and `cfg.Keys()` all
-keys.
+keys, with environment variables under the keys they match.

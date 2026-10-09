@@ -46,6 +46,11 @@ func load(workDir string, opts ...Option) (*gonf.Config, error) {
 // Keys in these tests start with "boottest" so that real environment
 // variables cannot interfere.
 
+// bootKeys makes keys known, so that the environment and .env provide them.
+type bootKeys struct {
+	Env, Dotenv, URL string `default:""`
+}
+
 func TestLoad_Precedence(t *testing.T) {
 	t.Setenv("BOOTTEST_ENV", "env")
 	dir := workDir(t, map[string]string{
@@ -56,7 +61,7 @@ func TestLoad_Precedence(t *testing.T) {
 	})
 	embedded := fstest.MapFS{"app.properties": {Data: []byte("boottest.config=embedded\nboottest.embedded=embedded\n")}}
 
-	cfg, err := load(dir, WithFS(embedded))
+	cfg, err := load(dir, WithFS(embedded), WithMappings(gonf.NewMapping[bootKeys]("boottest", gonf.AllowUnknown())))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +174,7 @@ func TestLoad_Profiles(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			opts := tt.opts
+			opts := append(slices.Clone(tt.opts), WithMappings(gonf.NewMapping[bootKeys]("boottest", gonf.AllowUnknown())))
 			if tt.embedded != nil {
 				opts = append(opts, WithFS(tt.embedded))
 			}
@@ -309,9 +314,13 @@ func TestDescribe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := []gonf.Property{{Key: "boottest.db.url", Env: "BOOTTEST_DB_URL", Type: "string", Required: true, Doc: "Address.", Mapping: "boottest.db", Location: "boot_test.go:308"}}
-	if !reflect.DeepEqual(props, expected) {
-		t.Errorf("Describe = %+v, want %+v", props, expected)
+	// The key of the default secret handler comes first.
+	if len(props) != 2 || props[0].Key != aesgcm.Key || props[0].Env != "GONF_SECRET_AES_GCM_KEY" || !props[0].Secret {
+		t.Fatalf("Describe = %+v, want the aes-gcm key and boottest.db.url", props)
+	}
+	expected := gonf.Property{Key: "boottest.db.url", Env: "BOOTTEST_DB_URL", Type: "string", Required: true, Doc: "Address.", Mapping: "boottest.db", Location: "boot_test.go:313"}
+	if !reflect.DeepEqual(props[1], expected) {
+		t.Errorf("Describe = %+v, want %+v", props[1], expected)
 	}
 }
 

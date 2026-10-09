@@ -25,14 +25,15 @@ func TestConfig_Lookup(t *testing.T) {
 	}
 }
 
-func TestConfig_Lookup_KeyMapper(t *testing.T) {
+func TestConfig_Lookup_MappedSource(t *testing.T) {
 	t.Parallel()
 	cfg, err := gonf.Load(context.Background(),
 		gonf.WithSources(
-			upperSource{"DB_URL": "mapped", "db.user": "exact", "DB_USER": "mapped"},
+			upperSource{"DB_URL": "mapped", "db.user": "dotted", "DB_USER": "mapped", "DB_NAME": "unknown key"},
 			memory.New(map[string]string{"%dev.db.url": "dev"}, source.WithName("test:a"), source.WithOrdinal(100)),
 		),
 		gonf.WithProfiles("dev"),
+		withKnownDB(),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +45,8 @@ func TestConfig_Lookup_KeyMapper(t *testing.T) {
 		isFound     bool
 	}{
 		{name: "mapped key found", key: "db.url", expectedRaw: "mapped", isFound: true},
-		{name: "exact key beats mapped key", key: "db.user", expectedRaw: "exact", isFound: true},
+		{name: "only names that match a key", key: "db.user", expectedRaw: "mapped", isFound: true},
+		{name: "name of no known key", key: "db.name"},
 		{name: "profile key is not found directly", key: "%dev.db.url"},
 	}
 	for _, tt := range tests {
@@ -126,6 +128,7 @@ func TestConfig_Candidates_Order(t *testing.T) {
 			upperSource{"A": "env"},
 		),
 		gonf.WithProfiles("dev"),
+		withTopLevel(),
 	)
 	if err != nil {
 		t.Fatal(err)

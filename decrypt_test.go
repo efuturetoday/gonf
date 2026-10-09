@@ -40,7 +40,10 @@ func TestWithSecretHandler_Get(t *testing.T) {
 		"broken": "${upper::fail}",
 		"nested": "${upper::${a}}",
 		"other":  "${lower::abc}",
-	}, upperSource{"C": "${upper::env}"}, gonf.WithSecretHandler("upper", u.handle))
+	}, upperSource{"C": "${upper::env}"}, gonf.WithSecretHandler("upper", u.handle),
+		gonf.WithMappings(gonf.NewMapping[struct {
+			C gonf.Secret[string] `default:""`
+		}]("", gonf.AllowUnknown())))
 
 	tests := []struct {
 		key      string
@@ -65,8 +68,8 @@ func TestWithSecretHandler_Get(t *testing.T) {
 		}
 	}
 	// The origin is where the expression is written, also behind a
-	// reference.
-	expected := []string{"file:app.properties", "file:app.properties", "test:upper", "test:upper", "file:app.properties"}
+	// reference. The first call is Load binding c.
+	expected := []string{"test:upper", "file:app.properties", "file:app.properties", "test:upper", "test:upper", "file:app.properties"}
 	if !slices.Equal(u.origins, expected) {
 		t.Errorf("origins = %q, want %q", u.origins, expected)
 	}

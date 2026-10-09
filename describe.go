@@ -14,7 +14,7 @@ type Property struct {
 	// Key is the key, with <name> for the key of a map entry and <n> for
 	// the index of a list element: db.pools.<name>.url, db.hosts[<n>].port.
 	Key string `json:"key"`
-	// Env is the key as the first Source that is a KeyMapper looks it up,
+	// Env is the name of the key in the first Source that is a KeyMapper,
 	// such as DB_POOL_MAX_SIZE for env.New; empty if there is no such
 	// Source or the key contains <name> or <n>.
 	Env string `json:"env,omitempty"`
@@ -194,4 +194,41 @@ func codeSpan(s string) string {
 func tableCell(s string) string {
 	s = strings.ReplaceAll(s, "|", `\|`)
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// knownKeys returns the keys a MappedSource gets: the keys of mappings, as
+// Describe lists them, a list of single values also as key[<n>], and
+// extra. A Mapping that Load cannot bind is left out; bindMappings
+// reports it.
+func knownKeys(cs converters, mappings []AnyMapping, extra ...string) []string {
+	var out []string
+	seen := map[string]struct{}{}
+	add := func(key string) {
+		if _, ok := seen[key]; key != "" && !ok {
+			seen[key] = struct{}{}
+			out = append(out, key)
+		}
+	}
+	for _, m := range mappings {
+		if m == nil {
+			continue
+		}
+		root, err := cs.rootModel(m.Prefix(), m.target())
+		if err != nil {
+			continue
+		}
+		walk(m.Prefix(), field{m: root}, nil, func(key string, f field) {
+			if f.err != nil || f.m.kind == kindInvalid {
+				return
+			}
+			add(key)
+			if f.m.kind == kindList {
+				add(key + "[<n>]")
+			}
+		})
+	}
+	for _, key := range extra {
+		add(key)
+	}
+	return out
 }

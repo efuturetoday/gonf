@@ -12,6 +12,7 @@ import (
 
 	"github.com/efuturetoday/gonf"
 	"github.com/efuturetoday/gonf/source"
+	"github.com/efuturetoday/gonf/source/env"
 )
 
 // keyValue is a minimal "k=v" per line Format, so these tests do not
@@ -132,16 +133,41 @@ func TestNew_WithProfile(t *testing.T) {
 	}
 }
 
-func TestNew_WithKeyMapper(t *testing.T) {
+func TestNew_WithProfile_KeyWithProfile(t *testing.T) {
 	t.Parallel()
-	if _, ok := source.New("x:p", static("a=1"), keyValue).(gonf.KeyMapper); ok {
-		t.Error("Source without WithKeyMapper implements gonf.KeyMapper")
+	tests := []struct {
+		name string
+		src  gonf.Source
+	}{
+		{name: "dotted", src: source.New("test:p", static("%dev.db.url=x"), keyValue, source.WithProfile("prod"))},
+		{name: "env style", src: source.New("test:p", static("_DEV_DB_URL=x"), keyValue, source.WithProfile("prod"), source.WithKeyMatcher(env.Match))},
 	}
-	upper := source.WithKeyMapper(func(key string) string {
-		return strings.ToUpper(strings.NewReplacer(".", "_", "%", "_").Replace(key))
-	})
-	src := source.New("test:p", static("DB_URL=base\n_DEV_DB_URL=dev\nDB_USER=u"), keyValue, upper)
-	cfg, err := gonf.Load(context.Background(), gonf.WithSources(src), gonf.WithProfiles("dev"))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := gonf.Load(context.Background(), gonf.WithSources(tt.src), gonf.WithMappings(gonf.NewMapping[struct {
+				URL string `default:""`
+			}]("db")))
+			if err == nil || !strings.Contains(err.Error(), `key "%dev.db.url" has a profile`) {
+				t.Errorf("Load error = %v, want one about the profile of the key", err)
+			}
+		})
+	}
+}
+
+func TestNew_WithKeyMatcher(t *testing.T) {
+	t.Parallel()
+	if _, ok := source.New("x:p", static("a=1"), keyValue).(gonf.MappedSource); ok {
+		t.Error("Source without WithKeyMatcher implements gonf.MappedSource")
+	}
+	src := source.New("test:p", static("DB_URL=base\n_DEV_DB_URL=dev\nDB_USER=u\nPATH=x"), keyValue, source.WithKeyMatcher(env.Match))
+	if got, err := src.Load(context.Background()); err != nil || len(got) != 4 {
+		t.Errorf("Load = %v, %v, want the 4 names as written", got, err)
+	}
+	type db struct {
+		URL, User string `default:""`
+	}
+	cfg, err := gonf.Load(context.Background(), gonf.WithSources(src), gonf.WithProfiles("dev"), gonf.WithMappings(gonf.NewMapping[db]("db")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,6 +178,9 @@ func TestNew_WithKeyMapper(t *testing.T) {
 	}{
 		{key: "db.url", expectedRaw: "dev", expectedProfile: "dev"},
 		{key: "db.user", expectedRaw: "u"},
+	}
+	if keys := cfg.Keys(); !slices.Equal(keys, []string{"db.url", "db.user"}) {
+		t.Errorf("Keys = %q, want [db.url db.user]", keys)
 	}
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {

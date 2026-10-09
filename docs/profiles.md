@@ -22,7 +22,8 @@ With `dev` active, `db.url` is `postgres://localhost/app`; otherwise it is
 | own file per profile (`boot`) | `db.url` in `config/app-dev.properties` |
 
 `boot` reads `app-<profile>.<ext>` next to every `app.<ext>`, only for
-active profiles. Every key in such a file belongs to the profile. To do the
+active profiles. Every key in such a file belongs to the profile; a key
+with a profile of its own, such as `%prod.db.url`, is an error. To do the
 same with your own Sources, use `source.WithProfile("dev")`.
 
 ## Activating profiles

@@ -82,8 +82,9 @@ Neither the key nor the value is an argument, so neither ends up in the
 shell history. `-key-file` reads the key from a file.
 
 `boot.Load` and `boot.Watch` decrypt such values without any code. The
-key comes from the configuration key `gonf.secret.aes-gcm.key`, so
-`GONF_SECRET_AES_GCM_KEY` in the environment is enough:
+key comes from the configuration key `gonf.secret.aes-gcm.key`, which boot
+registers with the Mapping `aesgcm.Mapping`, so `GONF_SECRET_AES_GCM_KEY` in
+the environment is enough:
 
 ```console
 $ GONF_SECRET_AES_GCM_KEY=... go run .

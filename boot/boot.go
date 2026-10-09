@@ -84,6 +84,8 @@ type options struct {
 type handler struct {
 	name    string
 	handler gonf.SecretHandler
+	// mapping holds the keys the handler reads, nil if none.
+	mapping gonf.AnyMapping
 }
 
 type format struct {
@@ -115,7 +117,7 @@ func WithSecretHandler(name string, h gonf.SecretHandler) Option {
 	return func(o *options) {
 		for i := range o.handlers {
 			if o.handlers[i].name == name {
-				o.handlers[i].handler = h
+				o.handlers[i] = handler{name: name, handler: h}
 				return
 			}
 		}
@@ -192,7 +194,7 @@ func build(workDir string, opts []Option) []gonf.Option {
 		{ext: "properties", format: properties.Format},
 		{ext: "json", format: json.Format},
 	}, handlers: []handler{
-		{name: aesgcm.Name, handler: aesgcm.Handler},
+		{name: aesgcm.Name, handler: aesgcm.Handler, mapping: aesgcm.Mapping},
 	}}
 	for _, opt := range opts {
 		opt(&o)
@@ -229,7 +231,7 @@ func build(workDir string, opts []Option) []gonf.Option {
 	}
 	srcs = append(srcs,
 		onDisk(filepath.Join(workDir, DotenvFile), dotenv.Format,
-			source.Optional(), source.WithOrdinal(DotenvOrdinal), source.WithKeyMapper(env.MapKey)),
+			source.Optional(), source.WithOrdinal(DotenvOrdinal), source.WithKeyMatcher(env.Match)),
 		env.New(),
 	)
 
@@ -240,6 +242,9 @@ func build(workDir string, opts []Option) []gonf.Option {
 	}
 	for _, h := range o.handlers {
 		core = append(core, gonf.WithSecretHandler(h.name, h.handler))
+		if h.mapping != nil {
+			core = append(core, gonf.WithMappings(h.mapping))
+		}
 	}
 	return append(core, o.core...)
 }

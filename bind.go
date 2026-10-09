@@ -27,7 +27,7 @@ func (c *Config) bindRoot(mapping AnyMapping, m *model, v reflect.Value) *binder
 		known:      map[string]struct{}{},
 		referenced: map[string]struct{}{},
 		secrets:    map[string]struct{}{},
-		defaults:   map[string]string{},
+		values:     map[string]boundValue{},
 	}
 	for _, opt := range mapping.options() {
 		opt(&b.options)
@@ -38,7 +38,7 @@ func (c *Config) bindRoot(mapping AnyMapping, m *model, v reflect.Value) *binder
 		b.open = append(b.open, prefix+".")
 		return b
 	}
-	b.bindStruct(prefix, m, v)
+	b.bindStruct(prefix, prefix, m, v)
 	if len(b.problems) == 0 && c.validator != nil {
 		if err := c.validator(v.Addr().Interface()); err != nil {
 			b.fail(prefix, Origin{}, err)
@@ -142,10 +142,19 @@ type binder struct {
 	// with the key whose value referred to them, in the order of binding.
 	referenced map[string]struct{}
 	references []reference
-	// secrets holds the keys of fields that hold a Secret, defaults the
-	// default tags by key.
-	secrets  map[string]struct{}
-	defaults map[string]string
+	// secrets holds the keys of fields that hold a Secret; values the
+	// keys bound to a value, with their Property.
+	secrets map[string]struct{}
+	values  map[string]boundValue
+}
+
+// boundValue is a key that a Mapping binds to a value, such as
+// db.pools.main.url: the key of its Property, such as db.pools.<name>.url,
+// and its default tag.
+type boundValue struct {
+	property string
+	def      *string
+	origin   Origin // of the default
 }
 
 // reference is a key that the value of another key refers to with ${...},
@@ -227,36 +236,38 @@ func (b *binder) value(key string) (string, Origin, bool, error) {
 	return s, v.Origin, s != "", nil
 }
 
-// bind binds key to v, of field f. bindRoot binds only models without
-// problems, so f has a valid model.
-func (b *binder) bind(key string, f field, v reflect.Value) {
+// bind binds key to v, of field f; property is the key of its Property,
+// with <name> and <n> where key has the entries of maps and lists, as walk
+// names them. bindRoot binds only models without problems, so f has a
+// valid model.
+func (b *binder) bind(key, property string, f field, v reflect.Value) {
 	b.known[key] = struct{}{}
-	if f.def != nil {
-		b.defaults[key] = *f.def
-	}
 	if f.m.isSecret {
 		b.secrets[key] = struct{}{}
 	}
+	if f.m.kind == kindScalar || f.m.kind == kindList && f.m.elem.kind == kindScalar {
+		b.values[key] = boundValue{property: property, def: f.def, origin: b.origin}
+	}
 	switch f.m.kind {
 	case kindPointer:
-		b.bindPointer(key, f, v)
+		b.bindPointer(key, property, f, v)
 	case kindScalar:
 		b.bindScalar(key, f, v)
 	case kindList:
-		b.bindSlice(key, f, v)
+		b.bindSlice(key, property, f, v)
 	case kindGroup:
-		b.bindStruct(key, f.m, v)
+		b.bindStruct(key, property, f.m, v)
 	case kindMap:
-		b.bindMap(key, f, v)
+		b.bindMap(key, property, f, v)
 	}
 }
 
 // bindStruct binds the fields of v, then validates v if they had no
 // problems.
-func (b *binder) bindStruct(prefix string, m *model, v reflect.Value) {
+func (b *binder) bindStruct(prefix, property string, m *model, v reflect.Value) {
 	before := len(b.problems)
 	for _, f := range m.fields {
-		b.bind(join(prefix, f.name), f, v.FieldByIndex(f.index))
+		b.bind(join(prefix, f.name), join(property, f.name), f, v.FieldByIndex(f.index))
 	}
 	if len(b.problems) > before {
 		return
@@ -301,16 +312,16 @@ func (b *binder) bindScalar(key string, f field, v reflect.Value) {
 }
 
 // bindPointer leaves v nil unless key has a value or a default.
-func (b *binder) bindPointer(key string, f field, v reflect.Value) {
+func (b *binder) bindPointer(key, property string, f field, v reflect.Value) {
 	if f.def == nil && !b.present(key, f.m, nil) {
 		return
 	}
 	p := reflect.New(f.m.elem.typ)
-	b.bind(key, f.pointee(), p.Elem())
+	b.bind(key, property, f.pointee(), p.Elem())
 	v.Set(p)
 }
 
-func (b *binder) bindSlice(key string, f field, v reflect.Value) {
+func (b *binder) bindSlice(key, property string, f field, v reflect.Value) {
 	b.open = append(b.open, key+"[")
 	s, origin, ok, err := b.value(key)
 	switch {
@@ -324,7 +335,13 @@ func (b *binder) bindSlice(key string, f field, v reflect.Value) {
 	if indices := b.indices(key, f.m.elem); len(indices) > 0 {
 		out := reflect.MakeSlice(v.Type(), len(indices), len(indices))
 		for i, n := range indices {
-			b.bind(index(key, n), f.element(), out.Index(i))
+			// The elements of a list of single values share the Property
+			// of the list.
+			elem := property
+			if f.m.elem.kind != kindScalar {
+				elem += "[<n>]"
+			}
+			b.bind(index(key, n), elem, f.element(), out.Index(i))
 		}
 		v.Set(out)
 		return
@@ -360,7 +377,7 @@ func (b *binder) bindList(key, s string, origin Origin, m *model, v reflect.Valu
 	v.Set(out)
 }
 
-func (b *binder) bindMap(key string, f field, v reflect.Value) {
+func (b *binder) bindMap(key, property string, f field, v reflect.Value) {
 	t := v.Type()
 	isGroupValue := f.m.elem.isGroup()
 	prefix := key + "."
@@ -387,7 +404,7 @@ func (b *binder) bindMap(key string, f field, v reflect.Value) {
 			continue
 		}
 		mv := reflect.New(t.Elem()).Elem()
-		b.bind(entry, f.entry(), mv)
+		b.bind(entry, property+".<name>", f.entry(), mv)
 		m.SetMapIndex(mk, mv)
 	}
 	if m.Len() > 0 {

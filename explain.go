@@ -8,9 +8,10 @@ import (
 	"strings"
 )
 
-// Explanation tells where the value of a key comes from. Secret values are
-// already replaced by "****" in all of its fields, so it can be printed,
-// logged or served as is; Get returns the real value.
+// Explanation tells where the value of a key comes from and, if a Mapping
+// reads the key, what the key is: its Property. Secret values are already
+// replaced by "****" in all of its fields, so it can be printed, logged or
+// served as is; Get returns the real value.
 type Explanation struct {
 	Key string
 	// Value is what a Mapping binds: the winning value, expanded, or the
@@ -18,43 +19,71 @@ type Explanation struct {
 	// reference to a secret key, as in postgres://u:${db.password}@host,
 	// expands to "****".
 	Value string
-	// Origin is where Value comes from: the winning value's Origin or
-	// Default's.
+	// Origin is where Value comes from: the winning value's Origin or,
+	// if IsDefault, the Mapping's, whose Source is "mapping:" followed by
+	// its prefix and whose Location is the file and line of NewMapping.
 	Origin Origin
-	// IsSecret reports whether the key is secret: a Mapping binds it to a
-	// Secret, or its name contains "password", "secret", "token" or
-	// "credential" in any case.
+	// IsDefault reports whether Value is the default of the Property.
+	IsDefault bool
+	// IsSecret reports whether the values are masked: the Property is
+	// Secret, the name of the key contains "password", "secret", "token"
+	// or "credential" in any case, or a value is encrypted.
 	IsSecret bool
 	// Candidates holds every value for the key, as Candidates does, with
 	// Raw replaced by "****" if IsSecret.
 	Candidates []Value
-	// Default is the default tag of a Mapping for the key, nil if there is
-	// none. Its Origin.Source is "mapping:" followed by the Mapping's
-	// prefix, its Origin.Location the file and line of NewMapping.
-	Default *Value
+	// Property is the definition of the key, as Describe and Properties
+	// list it, nil if no Mapping reads the key. Its Key has <name> and <n>
+	// where the key has the entries of maps and lists; its Env is that of
+	// the key itself, such as DB_POOLS_MAIN_URL for db.pools.main.url.
+	Property *Property
 	// Err is set if the key has neither a value nor a default, or its value
 	// cannot be expanded.
 	Err error
 }
 
 // Explain tells where the value of key comes from, including the values it
-// overrides and the default of a Mapping.
+// overrides and the default of a Mapping, and what the key is.
 func (c *Config) Explain(key string) Explanation {
-	e := Explanation{Key: key, IsSecret: c.isSecret(key), Candidates: c.Candidates(key)}
-	if def, ok := c.defaults[key]; ok {
-		e.Default = &def
+	e := Explanation{Key: key, IsSecret: c.isSecret(key), Candidates: c.Candidates(key), Property: c.propertyOf(key)}
+	var def *Value
+	if v, ok := c.values[key]; ok && v.def != nil {
+		def = &Value{Raw: *v.def, Origin: v.origin}
 	}
-	e.Value, e.Origin, e.Err = c.effective(key, e.Candidates, e.Default)
+	e.Value, e.Origin, e.Err = c.effective(key, e.Candidates, def)
+	e.IsDefault = e.Err == nil && def != nil && e.Origin == def.Origin
 	if e.IsSecret {
 		e.Value = masked
 		for i := range e.Candidates {
 			e.Candidates[i].Raw = masked
 		}
-		if e.Default != nil {
-			e.Default.Raw = masked
-		}
 	}
 	return e
+}
+
+// propertyOf returns the Property of key, with the environment name of key
+// itself; nil if no Mapping binds key to a value.
+func (c *Config) propertyOf(key string) *Property {
+	v, ok := c.values[key]
+	if !ok {
+		return nil
+	}
+	i, ok := c.property[v.property]
+	if !ok {
+		return nil
+	}
+	p := c.properties[i]
+	if m := c.keyMapper(); m != nil {
+		p.Env = m.MapKey(key)
+	}
+	return &p
+}
+
+// Properties returns the Properties of the Mappings, in the order of the
+// Mappings and their fields, as Describe returns them for the options of
+// Load: every key a Mapping reads, also those without a value.
+func (c *Config) Properties() []Property {
+	return slices.Clone(c.properties)
 }
 
 // effective returns the value a Mapping binds for key and where it comes
@@ -96,7 +125,7 @@ func (c *Config) Explanations() []Explanation {
 		}
 	}
 	for key := range c.read {
-		_, hasDefault := c.defaults[key]
+		hasDefault := c.values[key].def != nil
 		if _, ok := c.Lookup(key); ok || hasDefault {
 			keys[key] = struct{}{}
 		}
@@ -119,10 +148,9 @@ func (e Explanation) String() string {
 	if e.Err != nil {
 		fmt.Fprintf(&b, "%s: %v", e.Key, e.Err)
 	}
-	isDefaultUsed := e.Err == nil && e.Default != nil && e.Origin == e.Default.Origin
 	switch {
 	case e.Err != nil:
-	case isDefaultUsed:
+	case e.IsDefault:
 		fmt.Fprintf(&b, "%s = %s (default, %s)", e.Key, show(e.Value), where(e.Origin))
 	default:
 		fmt.Fprintf(&b, "%s = %s (%s)", e.Key, show(e.Value), where(e.Origin))
@@ -133,15 +161,15 @@ func (e Explanation) String() string {
 		case i > 0:
 		case e.Err != nil:
 			label = "value"
-		case isDefaultUsed:
+		case e.IsDefault:
 			label = "empty"
 		default:
 			continue
 		}
 		fmt.Fprintf(&b, "\n  %s %s (%s)", label, show(v.Raw), where(v.Origin))
 	}
-	if e.Default != nil && !isDefaultUsed {
-		fmt.Fprintf(&b, "\n  default %s (%s)", show(e.Default.Raw), where(e.Default.Origin))
+	if p := e.Property; p != nil && p.Default != nil && !e.IsDefault {
+		fmt.Fprintf(&b, "\n  default %s (%s)", show(*p.Default), cmp.Or(p.Location, "mapping:"+p.Mapping))
 	}
 	return b.String()
 }
@@ -158,10 +186,13 @@ func where(o Origin) string {
 	return s
 }
 
-// isSecret reports whether the value of key must be masked.
+// isSecret reports whether the value of key must be masked: by its
+// Property, its name, or an encrypted value.
 func (c *Config) isSecret(key string) bool {
-	_, ok := c.secrets[key]
-	return ok || isSecretName(key) || c.isEncrypted(key)
+	if p := c.propertyOf(key); p != nil && p.Secret {
+		return true
+	}
+	return isSecretName(key) || c.isEncrypted(key)
 }
 
 // expandMasked expands s like Get, but references to secret keys expand to

@@ -80,7 +80,7 @@ func decrypt(c *Config, key, name, value string, origin Origin) (string, error) 
 // or the default tag of a Mapping, contains a ${name::value} expression of
 // a registered SecretHandler.
 func (c *Config) isEncrypted(key string) bool {
-	if def, ok := c.defaults[key]; ok && c.hasHandlerExpression(def.Raw) {
+	if def := c.values[key].def; def != nil && c.hasHandlerExpression(*def) {
 		return true
 	}
 	for v := range c.all(key) {

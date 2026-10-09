@@ -3,12 +3,15 @@ package gonf_test
 import (
 	"errors"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/efuturetoday/gonf"
+	"github.com/efuturetoday/gonf/source/env"
+	"github.com/efuturetoday/gonf/source/memory"
 )
 
 type explainDB struct {
@@ -164,5 +167,96 @@ func TestConfig_Explanations(t *testing.T) {
 		if strings.Contains(all.String(), leak) {
 			t.Errorf("Explanations reveal %q:\n%s", leak, all.String())
 		}
+	}
+}
+
+type explainedPool struct {
+	URL     string `desc:"Address of the pool."`
+	MaxSize int    `default:"10"`
+}
+
+type explained struct {
+	Host  string `default:"localhost" desc:"Host of the database."`
+	Token string
+	Pools map[string]explainedPool
+	Tags  []string
+}
+
+var explainedMapping = gonf.NewMapping[explained]("app")
+
+// loadExplained returns the options that load explainedMapping from
+// values and the environment, which names the keys.
+func loadExplained(values map[string]string) []gonf.Option {
+	return []gonf.Option{gonf.WithSources(memory.New(values), env.New()), gonf.WithMappings(explainedMapping)}
+}
+
+// An Explanation carries the Property of its key, with the environment
+// name of the key itself; a key of a map entry gets the Property with
+// <name>.
+func TestConfig_Explain_property(t *testing.T) {
+	t.Parallel()
+	opts := loadExplained(map[string]string{"app.token": "t", "app.pools.main.url": "postgres://main"})
+	cfg, err := gonf.Load(t.Context(), opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := cfg.Explain("app.host")
+	if !host.IsDefault || host.Value != "localhost" || host.Property == nil {
+		t.Fatalf("app.host = %+v", host)
+	}
+	if p := host.Property; p.Key != "app.host" || p.Env != "APP_HOST" || p.Type != "string" || *p.Default != "localhost" || p.Required || p.Doc != "Host of the database." || p.Mapping != "app" {
+		t.Errorf("app.host property = %+v", *p)
+	}
+	token := cfg.Explain("app.token")
+	if token.IsDefault || !token.IsSecret || token.Property == nil || !token.Property.Secret || !token.Property.Required || token.Property.Default != nil {
+		t.Errorf("app.token = %+v, property %+v", token, token.Property)
+	}
+	url := cfg.Explain("app.pools.main.url")
+	if p := url.Property; p == nil || p.Key != "app.pools.<name>.url" || p.Env != "APP_POOLS_MAIN_URL" || p.Doc != "Address of the pool." {
+		t.Errorf("app.pools.main.url property = %+v", p)
+	}
+	if p := cfg.Explain("app.pools.main.max-size").Property; p == nil || *p.Default != "10" {
+		t.Errorf("app.pools.main.max-size property = %+v", p)
+	}
+	if p := cfg.Explain("other.key").Property; p != nil {
+		t.Errorf("a key no Mapping reads has the property %+v", p)
+	}
+}
+
+// The definition of a key is the same, whether Describe lists it, the
+// Config lists it, or an Explanation carries it: one derivation, no drift.
+func TestConfig_Properties_noDrift(t *testing.T) {
+	t.Parallel()
+	opts := loadExplained(map[string]string{"app.token": "t", "app.pools.main.url": "postgres://main"})
+	cfg, err := gonf.Load(t.Context(), opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	described, err := gonf.Describe(opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	props := cfg.Properties()
+	if !reflect.DeepEqual(props, described) {
+		t.Fatalf("Properties =\n%+v\nDescribe =\n%+v", props, described)
+	}
+	byKey := map[string]gonf.Property{}
+	for _, p := range props {
+		byKey[p.Key] = p
+	}
+	explained := 0
+	for _, e := range cfg.Explanations() {
+		if e.Property == nil {
+			continue
+		}
+		explained++
+		p := *e.Property
+		p.Env = byKey[p.Key].Env // the Env of the key, not of <name>
+		if !reflect.DeepEqual(p, byKey[p.Key]) {
+			t.Errorf("%s: property %+v, Properties %+v", e.Key, p, byKey[p.Key])
+		}
+	}
+	if explained == 0 {
+		t.Error("no Explanation has a Property")
 	}
 }

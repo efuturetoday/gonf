@@ -51,15 +51,21 @@ func TestDescribe(t *testing.T) {
 	expected := []gonf.Property{
 		{Key: "db.url", Env: "DB_URL", Type: "string", Required: true, Doc: "Address of the database."},
 		{Key: "db.password", Env: "DB_PASSWORD", Type: "string", Required: true, Secret: true},
-		{Key: "db.api-token", Env: "DB_API_TOKEN", Type: "string", Default: "****", Secret: true},
-		{Key: "db.timeout", Env: "DB_TIMEOUT", Type: "time.Duration", Default: "5s", Doc: "Wait | then fail."},
+		{Key: "db.api-token", Env: "DB_API_TOKEN", Type: "string", Default: new("****"), Secret: true},
+		{Key: "db.timeout", Env: "DB_TIMEOUT", Type: "time.Duration", Default: new("5s"), Doc: "Wait | then fail."},
 		{Key: "db.hosts", Env: "DB_HOSTS", Type: "[]string"},
 		{Key: "db.labels.<name>", Type: "string"},
 		{Key: "db.pool.name", Env: "DB_POOL_NAME", Type: "string", Required: true},
-		{Key: "db.pool.max-size", Env: "DB_POOL_MAX_SIZE", Type: "int", Default: "10"},
+		{Key: "db.pool.max-size", Env: "DB_POOL_MAX_SIZE", Type: "int", Default: new("10")},
 		{Key: "db.replicas[<n>].host", Type: "string", Required: true},
 		{Key: "db.servers.<name>.port", Type: "int"},
 		{Key: "db.proxy", Env: "DB_PROXY", Type: "*url.URL"},
+	}
+	if len(props) == 0 || !strings.Contains(props[0].Location, "describe_test.go:") {
+		t.Fatalf("location = %+v, want the line of NewMapping", props)
+	}
+	for i := range expected {
+		expected[i].Mapping, expected[i].Location = "db", props[0].Location
 	}
 	if !reflect.DeepEqual(props, expected) {
 		t.Errorf("got\n%+v\nwant\n%+v", props, expected)
@@ -175,8 +181,8 @@ func TestWriteMarkdown(t *testing.T) {
 	t.Parallel()
 	props := []gonf.Property{
 		{Key: "db.url", Env: "DB_URL", Type: "string", Required: true, Doc: "Address of the\ndatabase."},
-		{Key: "db.password", Type: "string", Default: "****", Secret: true},
-		{Key: "db.sep", Type: "string", Default: "a|`b`"},
+		{Key: "db.password", Type: "string", Default: new("****"), Secret: true},
+		{Key: "db.sep", Type: "string", Default: new("a|`b`")},
 	}
 	var b strings.Builder
 	if err := gonf.WriteMarkdown(&b, props); err != nil {

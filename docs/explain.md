@@ -49,10 +49,14 @@ as JSON or rendered otherwise:
 | --- | --- |
 | `Key`, `Value` | the key and the value a Mapping binds, expanded |
 | `Origin` | Source, ordinal, profile and location of the value |
+| `IsDefault` | whether the value is the default of the Mapping |
 | `Candidates` | every value for the key, the winner first |
-| `Default` | the default tag of a Mapping, if any |
 | `IsSecret` | whether values are masked |
 | `Err` | why the key has no value |
+| `Property` | what the key is, if a Mapping reads it: type, default, required, description, environment name, Mapping; see [Reference](reference.md) |
+
+So an `Explanation` is the value and where it comes from, together with the
+definition of the key, for a page that shows both.
 
 Secret values are already masked in every field, so an `Explanation` can be
 printed or sent as it is.

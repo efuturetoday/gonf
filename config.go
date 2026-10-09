@@ -24,12 +24,13 @@ type Config struct {
 	// mappings holds the bound value of every Mapping given with
 	// WithMappings.
 	mappings map[AnyMapping]boundMapping
-	// secrets holds the keys that Mappings bind to a Secret, defaults the
-	// default tags of the Mappings, read every key the Mappings bound or
-	// referenced.
-	secrets  map[string]struct{}
-	defaults map[string]Value
-	read     map[string]struct{}
+	// properties are the Properties of the Mappings, in their order, and
+	// property their index by key; values holds the keys the Mappings
+	// bound to a value, read every key they bound or referenced.
+	properties []Property
+	property   map[string]int
+	values     map[string]boundValue
+	read       map[string]struct{}
 }
 
 type loadedSource struct {
@@ -151,4 +152,15 @@ func (c *Config) all(key string) iter.Seq[Value] {
 			start = end
 		}
 	}
+}
+
+// keyMapper returns the Source of the highest priority that is a
+// KeyMapper, nil if there is none.
+func (c *Config) keyMapper() KeyMapper {
+	for _, s := range c.sources {
+		if s.mapper != nil {
+			return s.mapper
+		}
+	}
+	return nil
 }

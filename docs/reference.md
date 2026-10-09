@@ -68,13 +68,20 @@ props, err := gonf.Describe(gonf.WithSources(env.New()), gonf.WithMappings(db.Ma
 
 ## As data
 
-`Describe` returns `[]gonf.Property` with `Key`, `Env`, `Type`, `Default`,
-`Required`, `Secret` and `Doc`. The fields have JSON tags, so
-`json.Marshal(props)` gives a machine-readable reference. Defaults of secret
-fields are masked.
+`Describe` returns `[]gonf.Property` with `Key`, `Env`, `Type`, `Default`
+(nil without a default tag), `Required`, `Secret`, `Doc`, and `Mapping` and
+`Location`: the prefix and the line of `NewMapping` of the Mapping that
+reads the key. The fields have JSON tags, so `json.Marshal(props)` gives a
+machine-readable reference. Defaults of secret fields are masked.
+
+A loaded Config lists the same with `cfg.Properties()`, and every
+`Explanation` of a key a Mapping reads carries its `Property`, see
+[Explain](explain.md).
 
 ## Always in sync
 
 `Describe` and `Load` read a struct through the same model. A key that the
 table marks as required is exactly a key that `Load` reports as missing, and
-a field type that `Load` rejects is the same error from `Describe`.
+a field type that `Load` rejects is the same error from `Describe`. The
+Properties of `Describe`, of `cfg.Properties()` and of an `Explanation`
+come from one function, so they cannot differ.

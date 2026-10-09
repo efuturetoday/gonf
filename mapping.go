@@ -234,14 +234,13 @@ func WithValidator(validate func(v any) error) Option {
 }
 
 // remember records what Explain needs to know about the keys b bound. Of
-// two Mappings with a default for the same key, the first wins.
+// two Mappings with the same key, the first defines it, as in describe.
 func (c *Config) remember(b *binder) {
-	maps.Copy(c.secrets, b.secrets)
 	maps.Copy(c.read, b.known)
 	maps.Copy(c.read, b.referenced)
-	for key, def := range b.defaults {
-		if _, ok := c.defaults[key]; !ok {
-			c.defaults[key] = Value{Raw: def, Origin: b.origin}
+	for key, v := range b.values {
+		if _, ok := c.values[key]; !ok {
+			c.values[key] = v
 		}
 	}
 }
@@ -276,12 +275,12 @@ func (c *Config) bindMappings(mappings []AnyMapping) error {
 	}
 	checkUnknown(binders)
 	c.mappings = make(map[AnyMapping]boundMapping, len(bound))
-	c.secrets = map[string]struct{}{}
-	c.defaults = map[string]Value{}
+	c.values = map[string]boundValue{}
 	c.read = map[string]struct{}{}
 	for _, b := range binders {
 		c.remember(b)
 	}
+
 	for i, b := range binders {
 		b.checkSecretReferences()
 		if err := b.err(); err != nil {
@@ -290,5 +289,13 @@ func (c *Config) bindMappings(mappings []AnyMapping) error {
 		}
 		c.mappings[bound[i]] = boundMapping{value: values[i].Interface(), model: roots[i]}
 	}
-	return errors.Join(errs...)
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+	c.properties = describe(bound, roots, c.keyMapper())
+	c.property = make(map[string]int, len(c.properties))
+	for i, p := range c.properties {
+		c.property[p.Key] = i
+	}
+	return nil
 }

@@ -7,8 +7,9 @@ import (
 	"strings"
 )
 
-// Property describes one key that a Mapping reads, for documentation such as
-// the configuration reference of an application.
+// Property describes one key that a Mapping reads: its definition, from the
+// struct alone, for documentation such as the configuration reference of
+// an application and next to the value in an Explanation.
 type Property struct {
 	// Key is the key, with <name> for the key of a map entry and <n> for
 	// the index of a list element: db.pools.<name>.url, db.hosts[<n>].port.
@@ -20,8 +21,9 @@ type Property struct {
 	// Type is the Go type of the value; a Secret[T] is described as T with
 	// Secret set.
 	Type string `json:"type"`
-	// Default is the default tag, not expanded; masked if Secret.
-	Default string `json:"default,omitempty"`
+	// Default is the default tag, not expanded, nil without one; masked if
+	// Secret.
+	Default *string `json:"default,omitempty"`
 	// Required reports whether Load fails without a value for the key. Inside
 	// an optional struct (a pointer), a map entry or a list element, it
 	// applies only if that exists.
@@ -31,6 +33,10 @@ type Property struct {
 	Secret bool `json:"secret,omitempty"`
 	// Doc is the desc tag of the field.
 	Doc string `json:"doc,omitempty"`
+	// Mapping is the prefix of the Mapping that reads the key, Location the
+	// file and line of its NewMapping.
+	Mapping  string `json:"mapping"`
+	Location string `json:"location,omitempty"`
 }
 
 // Describe returns the Properties of the Mappings given with WithMappings,
@@ -64,13 +70,15 @@ func Describe(opts ...Option) ([]Property, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := describer{seen: map[string]struct{}{}}
+	var mapper KeyMapper
 	for _, src := range o.sources {
 		if m, ok := src.(KeyMapper); ok {
-			d.mapper = m
+			mapper = m
 			break
 		}
 	}
+	var mappings []AnyMapping
+	var roots []*model
 	var errs []error
 	for _, m := range o.mappings {
 		if m == nil {
@@ -86,43 +94,55 @@ func Describe(opts ...Option) ([]Property, error) {
 			errs = append(errs, &BindError{Prefix: m.Prefix(), Problems: problems})
 			continue
 		}
-		walk(m.Prefix(), field{m: root}, nil, d.add)
+		mappings = append(mappings, m)
+		roots = append(roots, root)
 	}
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	return d.props, nil
+	return describe(mappings, roots, mapper), nil
 }
 
-// describer collects the Properties of Describe.
-type describer struct {
-	mapper KeyMapper
-	props  []Property
-	seen   map[string]struct{}
-}
-
-// add adds the Property of key, read as field f.
-func (d *describer) add(key string, f field) {
-	if _, ok := d.seen[key]; ok {
-		return
+// describe returns the Properties of mappings, read as the models roots, in
+// their order; of two Mappings with the same key, the first describes it.
+// Describe and Config.Properties both use it, so that the documentation and
+// the explanation of a key cannot drift.
+func describe(mappings []AnyMapping, roots []*model, mapper KeyMapper) []Property {
+	out := []Property{}
+	seen := map[string]struct{}{}
+	for i, m := range mappings {
+		walk(m.Prefix(), field{m: roots[i]}, nil, func(key string, f field) {
+			if _, ok := seen[key]; ok {
+				return
+			}
+			seen[key] = struct{}{}
+			p := propertyOf(key, f, m)
+			if mapper != nil && !strings.Contains(key, "<") {
+				p.Env = mapper.MapKey(key)
+			}
+			out = append(out, p)
+		})
 	}
-	d.seen[key] = struct{}{}
+	return out
+}
+
+// propertyOf returns the Property of key, which the Mapping m reads as
+// field f; key has <name> and <n> for the entries of maps and lists.
+func propertyOf(key string, f field, m AnyMapping) Property {
 	t := f.m.typ
-	p := Property{Key: key, Type: t.String(), Required: f.isRequired, Doc: f.desc}
+	p := Property{Key: key, Type: t.String(), Required: f.isRequired, Doc: f.desc, Mapping: m.Prefix(), Location: m.origin().Location}
 	if isSecret(t) {
 		p.Type = secretElem(t).String()
 	}
 	p.Secret = f.m.isSecret || isSecretName(key)
 	if f.def != nil {
-		p.Default = *f.def
+		def := *f.def
+		if p.Secret && def != "" {
+			def = masked
+		}
+		p.Default = &def
 	}
-	if p.Secret && p.Default != "" {
-		p.Default = masked
-	}
-	if d.mapper != nil && !strings.Contains(key, "<") {
-		p.Env = d.mapper.MapKey(key)
-	}
-	d.props = append(d.props, p)
+	return p
 }
 
 // WriteMarkdown writes props as a Markdown table, such as for a README.
@@ -136,7 +156,10 @@ func WriteMarkdown(w io.Writer, props []Property) error {
 		if p.Secret {
 			typ += " (secret)"
 		}
-		def := codeSpan(p.Default)
+		def := ""
+		if p.Default != nil {
+			def = codeSpan(*p.Default)
+		}
 		if p.Required {
 			def = "required"
 		}

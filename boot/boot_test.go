@@ -309,7 +309,7 @@ func TestDescribe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := []gonf.Property{{Key: "boottest.db.url", Env: "BOOTTEST_DB_URL", Type: "string", Required: true, Doc: "Address."}}
+	expected := []gonf.Property{{Key: "boottest.db.url", Env: "BOOTTEST_DB_URL", Type: "string", Required: true, Doc: "Address.", Mapping: "boottest.db", Location: "boot_test.go:308"}}
 	if !reflect.DeepEqual(props, expected) {
 		t.Errorf("Describe = %+v, want %+v", props, expected)
 	}

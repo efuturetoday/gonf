@@ -31,12 +31,19 @@ type Config struct {
 	property   map[string]int
 	values     map[string]boundValue
 	read       map[string]struct{}
+	// warnings are those of the Sources and, after binding, of the
+	// Mappings.
+	warnings []Warning
 }
 
 type loadedSource struct {
 	src     Source
 	ordinal int
 	values  map[string]Value
+	// isMissing is set for an optional Source whose document is missing;
+	// warnings are what the Source found out about its names.
+	isMissing bool
+	warnings  []Warning
 }
 
 // newConfig builds a Config from Sources in registration order.
@@ -55,7 +62,11 @@ func newConfig(loaded []loadedSource, profiles []string) *Config {
 			}
 		}
 	}
-	return &Config{sources: srcs, profiles: profiles, keys: slices.Sorted(maps.Keys(keys))}
+	c := &Config{sources: srcs, profiles: profiles, keys: slices.Sorted(maps.Keys(keys))}
+	for _, s := range srcs {
+		c.warnings = append(c.warnings, s.warnings...)
+	}
+	return c
 }
 
 // activeKey returns the key without its profile prefix, and false for a
@@ -143,10 +154,44 @@ func (c *Config) all(key string) iter.Seq[Value] {
 // keyMapper returns the Source of the highest priority that is a
 // KeyMapper, nil if there is none. It names Property.Env only.
 func (c *Config) keyMapper() KeyMapper {
+	if s := c.keyMapperSource(); s != nil {
+		return s.(KeyMapper)
+	}
+	return nil
+}
+
+// keyMapperSource returns the Source keyMapper returns, nil if there is
+// none.
+func (c *Config) keyMapperSource() Source {
 	for _, s := range c.sources {
-		if m, ok := s.src.(KeyMapper); ok {
-			return m
+		if _, ok := s.src.(KeyMapper); ok {
+			return s.src
 		}
 	}
 	return nil
+}
+
+// Sources returns the loaded Sources, the highest priority first: the order
+// in which they win a key. Of equal ordinals the Source registered later
+// comes first.
+func (c *Config) Sources() []SourceInfo {
+	out := make([]SourceInfo, len(c.sources))
+	for i, s := range c.sources {
+		info := SourceInfo{Name: s.src.Name(), Ordinal: s.ordinal, Keys: len(s.values), IsMissing: s.isMissing}
+		if p, ok := s.src.(ProfileSource); ok {
+			info.Profile = p.Profile()
+		}
+		if o, ok := s.src.(OptionalSource); ok {
+			info.IsOptional = o.IsOptional()
+		}
+		out[i] = info
+	}
+	return out
+}
+
+// Warnings returns what Load noticed and did not treat as an error, see
+// Warning: first those of the Sources in priority order, by name, then the
+// name conflicts of the Mappings.
+func (c *Config) Warnings() []Warning {
+	return slices.Clone(c.warnings)
 }

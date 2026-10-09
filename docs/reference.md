@@ -78,6 +78,13 @@ A loaded Config lists the same with `cfg.Properties()`, and every
 `Explanation` of a key a Mapping reads carries its `Property`, see
 [Explain](explain.md).
 
+## Names that clash
+
+If two keys have the same environment variable, such as `db.max-size` and
+`db.max.size` as `DB_MAX_SIZE`, `Describe` returns an error wrapping
+`gonf.ErrNameConflict` and no table. `Load` only warns, see
+[Sources](sources.md#unknown-and-clashing-names).
+
 ## Always in sync
 
 `Describe` and `Load` read a struct through the same model. A key that the

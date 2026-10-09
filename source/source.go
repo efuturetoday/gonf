@@ -49,6 +49,18 @@ type docSource struct {
 	mu sync.Mutex
 	// seen identifies the content last loaded or reported as changed.
 	seen string
+	// missing tells whether the last Load found an optional document
+	// missing.
+	missing bool
+}
+
+var _ gonf.OptionalSource = (*docSource)(nil)
+
+// IsMissing implements gonf.OptionalSource.
+func (s *docSource) IsMissing() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.missing
 }
 
 var _ gonf.Watcher = (*docSource)(nil)
@@ -99,8 +111,12 @@ func (s *docSource) Load(ctx context.Context) (map[string]gonf.Value, error) {
 func (s *docSource) parse(ctx context.Context) (map[string]gonf.Value, error) {
 	data, err := s.read(ctx)
 	s.see(data, err)
+	missing := err != nil && s.IsOptional() && errors.Is(err, fs.ErrNotExist)
+	s.mu.Lock()
+	s.missing = missing
+	s.mu.Unlock()
 	if err != nil {
-		if s.IsOptional() && errors.Is(err, fs.ErrNotExist) {
+		if missing {
 			return map[string]gonf.Value{}, nil
 		}
 		return nil, err

@@ -58,6 +58,11 @@ type Property struct {
 // *BindError here as in Load. Of two Mappings with the same key, the first
 // describes it.
 //
+// If several keys have the same Env, such as db.max-size and db.max.size
+// as DB_MAX_SIZE, Describe fails with an error that wraps ErrNameConflict
+// for each such name; Load reports them as Warnings, since an application
+// that never sets those keys through the environment works.
+//
 // A field documents itself with a desc tag:
 //
 //	MaxSize int `default:"10" desc:"Maximum number of open connections."`
@@ -100,7 +105,11 @@ func Describe(opts ...Option) ([]Property, error) {
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	return describe(mappings, roots, mapper), nil
+	props := describe(mappings, roots, mapper)
+	if err := conflictError(props); err != nil {
+		return nil, err
+	}
+	return props, nil
 }
 
 // describe returns the Properties of mappings, read as the models roots, in

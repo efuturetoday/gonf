@@ -40,6 +40,13 @@ for _, e := range cfg.Explanations() {
 It covers the keys of all files and the keys the Mappings read. Environment
 variables that no Mapping reads, such as `PATH`, are left out.
 
+## Sources and warnings
+
+`cfg.Sources()` lists the loaded Sources with their ordinal, profile, number
+of keys and whether an optional file was missing; `cfg.Warnings()` lists
+what `Load` noticed but did not reject, such as environment variables
+`DB_PROT` that match no key. See [Sources](sources.md#unknown-and-clashing-names).
+
 ## As data
 
 `Explain` returns an `Explanation`, so the same information can be served

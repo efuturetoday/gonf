@@ -135,6 +135,40 @@ with functions in expressions.
 A Source of your own with such names implements `gonf.MappedSource`; it
 gets the keys and returns its values under them.
 
+### Unknown and clashing names
+
+A variable that starts like a Mapping but matches no key is not an error:
+a Kubernetes service named `db` sets `DB_PORT` and `DB_SERVICE_HOST` in
+every pod. `Load` reports it as a warning instead, `_DEV_DB_X` included:
+
+```go
+for _, w := range cfg.Warnings() {
+	log.Println(w) // env: DB_PROT matches no key, did you mean DB_PORT?
+}
+```
+
+A name is under a Mapping with prefix `db` if it starts with `DB_`. The
+Source decides that, so gonf itself knows nothing about variable names. A
+Source of your own can do the same by implementing `gonf.NameReporter`.
+
+Two keys that give the same variable, such as `db.max-size` and
+`db.max.size` as `DB_MAX_SIZE`, are a warning of kind `WarnNameConflict`
+too, because an application that never sets them through the environment
+works. `Describe` fails for them with `gonf.ErrNameConflict`, since a
+reference with one name for two keys is wrong.
+
+## Which Sources were loaded
+
+`cfg.Sources()` lists the Sources, the highest priority first, e.g. for a
+status page:
+
+| Field | Meaning |
+| --- | --- |
+| `Name`, `Ordinal` | the Source and its priority |
+| `Profile` | the profile of a Source made with `source.WithProfile` |
+| `Keys` | how many keys it delivered |
+| `IsOptional`, `IsMissing` | an optional file that was not found delivers nothing |
+
 ## Command-line flags
 
 `flagsource.New(fs)` (`source/flagsource`) reads the flags of a standard

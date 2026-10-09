@@ -118,8 +118,11 @@ func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
 		return nil, nil, err
 	}
 
-	keys := sync.OnceValue(func() []string { return knownKeys(cs, o.mappings, o.profileKey) })
-	loaded, err := loadSources(ctx, o.sources, keys)
+	in := loadInput{
+		keys:     sync.OnceValue(func() []string { return knownKeys(cs, o.mappings, o.profileKey) }),
+		prefixes: mappingPrefixes(o.mappings),
+	}
+	loaded, err := loadSources(ctx, o.sources, in)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -133,7 +136,7 @@ func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
 	var created []Source
 	if len(o.factories) > 0 {
 		var late []loadedSource
-		late, created, err = runFactories(ctx, o.factories, cfg, keys)
+		late, created, err = runFactories(ctx, o.factories, cfg, in)
 		if err != nil {
 			return nil, created, err
 		}
@@ -143,6 +146,7 @@ func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
 	if err := cfg.bindMappings(o.mappings); err != nil {
 		return nil, created, err
 	}
+	cfg.warnings = append(cfg.warnings, conflictWarnings(cfg.properties, cfg.keyMapperSource())...)
 	return cfg, created, nil
 }
 
@@ -173,7 +177,7 @@ func isSame(a, b Source) bool {
 // runFactories passes cfg to every factory and loads the Sources they
 // return. It runs all factories and reports all failures together. It
 // returns the Sources the factories created, also on error.
-func runFactories(ctx context.Context, factories []SourceFactory, cfg *Config, keys func() []string) ([]loadedSource, []Source, error) {
+func runFactories(ctx context.Context, factories []SourceFactory, cfg *Config, in loadInput) ([]loadedSource, []Source, error) {
 	var created []Source
 	var errs []error
 	for _, factory := range factories {
@@ -191,16 +195,33 @@ func runFactories(ctx context.Context, factories []SourceFactory, cfg *Config, k
 		}
 		created = append(created, srcs...)
 	}
-	late, err := loadSources(ctx, created, keys)
+	late, err := loadSources(ctx, created, in)
 	if err != nil {
 		errs = append(errs, err)
 	}
 	return late, created, errors.Join(errs...)
 }
 
-// loadSources loads srcs in registration order. A MappedSource gets the
-// result of keys.
-func loadSources(ctx context.Context, srcs []Source, keys func() []string) ([]loadedSource, error) {
+// loadInput is what a MappedSource gets: the known keys, computed when
+// first needed, and the prefixes of the Mappings.
+type loadInput struct {
+	keys     func() []string
+	prefixes []string
+}
+
+// mappingPrefixes returns the distinct, non-empty prefixes of mappings.
+func mappingPrefixes(mappings []AnyMapping) []string {
+	var out []string
+	for _, m := range mappings {
+		if m != nil && m.Prefix() != "" && !slices.Contains(out, m.Prefix()) {
+			out = append(out, m.Prefix())
+		}
+	}
+	return out
+}
+
+// loadSources loads srcs in registration order. A MappedSource gets in.
+func loadSources(ctx context.Context, srcs []Source, in loadInput) ([]loadedSource, error) {
 	loaded := make([]loadedSource, 0, len(srcs))
 	var errs []error
 	for _, src := range srcs {
@@ -215,7 +236,7 @@ func loadSources(ctx context.Context, srcs []Source, keys func() []string) ([]lo
 			errs = append(errs, &SourceError{Source: src.Name(), Err: ErrInvalidSourceName})
 			continue
 		}
-		values, err := loadValues(ctx, src, keys)
+		values, unknown, err := loadValues(ctx, src, in)
 		if err != nil {
 			errs = append(errs, &SourceError{Source: src.Name(), Err: err})
 			continue
@@ -225,6 +246,10 @@ func loadSources(ctx context.Context, srcs []Source, keys func() []string) ([]lo
 			errs = append(errs, &SourceError{Source: src.Name(), Err: err})
 			continue
 		}
+		s.warnings = unknownWarnings(src, unknown, in)
+		if o, ok := src.(OptionalSource); ok {
+			s.isMissing = o.IsMissing()
+		}
 		loaded = append(loaded, s)
 	}
 	if len(errs) > 0 {
@@ -233,12 +258,18 @@ func loadSources(ctx context.Context, srcs []Source, keys func() []string) ([]lo
 	return loaded, nil
 }
 
-// loadValues loads src, a MappedSource with the result of keys.
-func loadValues(ctx context.Context, src Source, keys func() []string) (map[string]Value, error) {
-	if m, ok := src.(MappedSource); ok {
-		return m.LoadMapped(ctx, keys())
+// loadValues loads src; a MappedSource gets the keys, a NameReporter the
+// prefixes too and returns the names it found no key for.
+func loadValues(ctx context.Context, src Source, in loadInput) (map[string]Value, []string, error) {
+	if r, ok := src.(NameReporter); ok && len(in.prefixes) > 0 {
+		return r.LoadReport(ctx, in.keys(), in.prefixes)
 	}
-	return src.Load(ctx)
+	if m, ok := src.(MappedSource); ok {
+		values, err := m.LoadMapped(ctx, in.keys())
+		return values, nil, err
+	}
+	values, err := src.Load(ctx)
+	return values, nil, err
 }
 
 // newLoadedSource validates the profile keys of values and fills in the

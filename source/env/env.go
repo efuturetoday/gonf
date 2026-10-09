@@ -6,6 +6,7 @@ package env
 import (
 	"context"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/efuturetoday/gonf"
@@ -22,6 +23,7 @@ type envSource struct {
 var (
 	_ gonf.MappedSource = (*envSource)(nil)
 	_ gonf.KeyMapper    = (*envSource)(nil)
+	_ gonf.NameReporter = (*envSource)(nil)
 )
 
 // New returns a Source with the process environment variables.
@@ -65,6 +67,53 @@ func (s *envSource) LoadMapped(ctx context.Context, keys []string) (map[string]g
 		return nil, err
 	}
 	return Match(values, keys), nil
+}
+
+// LoadReport implements gonf.NameReporter. A name is unknown if it starts
+// with MapKey(prefix)+"_" for a prefix, or with that after a profile, as
+// _DEV_DB_ for db, and matches no key: DB_PORT for the Mapping "db", when
+// it has no port. Such a variable is often a typo, but a Kubernetes
+// service named db also sets DB_PORT and DB_SERVICE_HOST.
+func (s *envSource) LoadReport(ctx context.Context, keys, prefixes []string) (map[string]gonf.Value, []string, error) {
+	values, err := s.Load(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	matched, unmatched := match(values, keys)
+	return matched, underPrefixes(unmatched, prefixes), nil
+}
+
+// underPrefixes returns the names that start with the environment form of
+// one of prefixes followed by '_', also after a profile; sorted.
+func underPrefixes(names, prefixes []string) []string {
+	var out []string
+	for _, name := range names {
+		for _, p := range prefixes {
+			if isUnder(name, MapKey(p)+"_") {
+				out = append(out, name)
+				break
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// isUnder reports whether name starts with prefix, or with _PROFILE_ and
+// then prefix.
+func isUnder(name, prefix string) bool {
+	if strings.HasPrefix(name, prefix) {
+		return true
+	}
+	if !strings.HasPrefix(name, "_") {
+		return false
+	}
+	for i := 2; i < len(name)-1; i++ {
+		if name[i] == '_' && strings.HasPrefix(name[i+1:], prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *envSource) Load(context.Context) (map[string]gonf.Value, error) {

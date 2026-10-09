@@ -44,6 +44,7 @@ import (
 	"github.com/efuturetoday/gonf/format/dotenv"
 	"github.com/efuturetoday/gonf/format/json"
 	"github.com/efuturetoday/gonf/format/properties"
+	"github.com/efuturetoday/gonf/schema"
 	"github.com/efuturetoday/gonf/secret/aesgcm"
 	"github.com/efuturetoday/gonf/source"
 	"github.com/efuturetoday/gonf/source/env"
@@ -272,4 +273,16 @@ func profileFiles(locations []location, formats []format) gonf.SourceFactory {
 		}
 		return srcs, nil
 	}
+}
+
+// Schema returns the JSON Schema of the keys Load reads, see schema.New. It
+// takes the same options as Load and reads no file:
+//
+//	doc, err := boot.Schema(boot.WithMappings(db.Mapping))
+func Schema(opts ...Option) ([]byte, error) {
+	props, err := Describe(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return schema.New(props)
 }

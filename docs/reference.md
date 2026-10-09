@@ -85,3 +85,57 @@ table marks as required is exactly a key that `Load` reports as missing, and
 a field type that `Load` rejects is the same error from `Describe`. The
 Properties of `Describe`, of `cfg.Properties()` and of an `Explanation`
 come from one function, so they cannot differ.
+
+## JSON Schema
+
+`schema.New` turns the Properties into a JSON Schema (draft 2020-12), so an
+editor offers completion, type checks and the `desc` texts in YAML and JSON
+configuration files. `boot.Schema` takes the same options as `boot.Describe`:
+
+```go
+doc, err := boot.Schema(boot.WithMappings(db.Mapping))
+if err != nil {
+	log.Fatal(err)
+}
+os.Stdout.Write(doc)
+```
+
+```sh
+go run . -config-schema > config/app.schema.json
+```
+
+What the schema says:
+
+- Dotted keys become nested objects. `<name>` is `additionalProperties`
+  with the schema of the entry, a list is an array. A list of plain values
+  may also be a comma-separated string.
+- Defaults are `default`, `desc` is `description` and `markdownDescription`
+  (VS Code shows the latter). A secret is `writeOnly` and has no default.
+- Integers have their bounds, e.g. `uint16` is 0 to 65535. Every type but
+  string also accepts a `${...}` expression. A type with its own text
+  format is not checked beyond the kind of the value.
+- Objects below the prefix of a Mapping reject unknown keys, like `Load`.
+  The root stays open for other prefixes. A Mapping with `AllowUnknown` is
+  closed in the schema all the same.
+- `required` lists the keys `Load` requires inside an object that exists.
+  A missing object is not reported, since its values may come from the
+  environment.
+- Profile sections (`"%dev": {...}`) are allowed at the root with the same
+  properties and no `required`. The flat form `%dev.db.url` is accepted
+  without checking its value.
+
+In VS Code, with the YAML extension, in `settings.json`:
+
+```json
+{
+  "yaml.schemas": {
+    "./config/app.schema.json": ["config/app*.yaml"]
+  }
+}
+```
+
+For a JSON file, use `json.schemas` with `fileMatch` and `url` instead. In
+JetBrains IDEs, open Settings, Languages & Frameworks, Schemas and DTDs,
+JSON Schema Mappings, add the file and map it to `config/app*.yaml`. A file
+can also name its schema itself, with a first line
+`# yaml-language-server: $schema=./app.schema.json`.

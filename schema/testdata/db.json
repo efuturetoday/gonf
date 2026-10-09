@@ -1,0 +1,351 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "patternProperties": {
+    "^%[^.]+$": {
+      "properties": {
+        "db": {
+          "additionalProperties": false,
+          "properties": {
+            "debug": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "pattern": "\\$\\{",
+                  "type": "string"
+                }
+              ],
+              "default": true
+            },
+            "labels": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "password": {
+              "description": "Password of the user.",
+              "markdownDescription": "Password of the user.",
+              "type": "string",
+              "writeOnly": true
+            },
+            "pool": {
+              "additionalProperties": false,
+              "properties": {
+                "max-size": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "pattern": "\\$\\{",
+                      "type": "string"
+                    }
+                  ],
+                  "default": 10,
+                  "description": "Maximum number of open connections.",
+                  "markdownDescription": "Maximum number of open connections."
+                }
+              },
+              "type": "object"
+            },
+            "port": {
+              "anyOf": [
+                {
+                  "maximum": 65535,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "pattern": "\\$\\{",
+                  "type": "string"
+                }
+              ],
+              "default": 5432
+            },
+            "proxy": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            "ratio": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "\\$\\{",
+                  "type": "string"
+                }
+              ],
+              "default": 0.5
+            },
+            "replica": {
+              "additionalProperties": false,
+              "properties": {
+                "host": {
+                  "type": "string"
+                },
+                "port": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "pattern": "\\$\\{",
+                      "type": "string"
+                    }
+                  ],
+                  "default": 5432
+                }
+              },
+              "type": "object"
+            },
+            "replicas": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "host": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "servers": {
+              "additionalProperties": {
+                "additionalProperties": false,
+                "properties": {
+                  "host": {
+                    "type": "string"
+                  },
+                  "port": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "pattern": "\\$\\{",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "type": "object"
+              },
+              "type": "object"
+            },
+            "tags": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "default": "a,b"
+            },
+            "timeout": {
+              "default": "5s",
+              "type": "string"
+            },
+            "url": {
+              "description": "Address of the **database**.",
+              "markdownDescription": "Address of the **database**.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "^%[^.]+\\.": true
+  },
+  "properties": {
+    "db": {
+      "additionalProperties": false,
+      "properties": {
+        "debug": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "pattern": "\\$\\{",
+              "type": "string"
+            }
+          ],
+          "default": true
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "password": {
+          "description": "Password of the user.",
+          "markdownDescription": "Password of the user.",
+          "type": "string",
+          "writeOnly": true
+        },
+        "pool": {
+          "additionalProperties": false,
+          "properties": {
+            "max-size": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "pattern": "\\$\\{",
+                  "type": "string"
+                }
+              ],
+              "default": 10,
+              "description": "Maximum number of open connections.",
+              "markdownDescription": "Maximum number of open connections."
+            }
+          },
+          "type": "object"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "pattern": "\\$\\{",
+              "type": "string"
+            }
+          ],
+          "default": 5432
+        },
+        "proxy": {
+          "type": [
+            "string",
+            "number",
+            "boolean"
+          ]
+        },
+        "ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "\\$\\{",
+              "type": "string"
+            }
+          ],
+          "default": 0.5
+        },
+        "replica": {
+          "additionalProperties": false,
+          "properties": {
+            "host": {
+              "type": "string"
+            },
+            "port": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "pattern": "\\$\\{",
+                  "type": "string"
+                }
+              ],
+              "default": 5432
+            }
+          },
+          "required": [
+            "host"
+          ],
+          "type": "object"
+        },
+        "replicas": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "host": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "host"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "servers": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "port": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "pattern": "\\$\\{",
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "host"
+            ],
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "a,b"
+        },
+        "timeout": {
+          "default": "5s",
+          "type": "string"
+        },
+        "url": {
+          "description": "Address of the **database**.",
+          "markdownDescription": "Address of the **database**.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "password",
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  "type": "object"
+}

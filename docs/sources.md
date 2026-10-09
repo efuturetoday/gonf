@@ -57,6 +57,34 @@ Options for these Sources:
 | `source.WithKeyMatcher(env.Match)` | keys are written like environment variables, as in `.env` |
 | `source.WithTrigger(source.Every(5*time.Second))` | while `gonf.Watch` watches, check for changes every 5 s instead of every 2 s |
 
+## Directory with one file per key
+
+`dir.New(path)` (`source/dir`, ordinal 100, name `dir:<path>`) reads a
+directory as Kubernetes mounts a Secret or ConfigMap: every regular file
+directly in it is a key. The file name is the key (`db.password`), the
+content the value.
+
+```go
+cfg, err := boot.Load(ctx,
+	boot.With(gonf.WithSources(dir.New("/etc/secrets", source.Optional()))),
+)
+```
+
+- Content is kept exactly. A file written with `echo` ends in a newline,
+  and so does the value. `dir.NewTrimmed(path)` removes one trailing
+  newline (`\n` or `\r\n`) from every value.
+- Files and directories starting with `..` (`..data`, `..2026_01_02...`)
+  are ignored, and so are subdirectories.
+- Symbolic links are followed, but only inside the directory. A link that
+  points outside, a broken link and a file over 1 MiB (`dir.MaxFileSize`)
+  are errors naming the file.
+- `source.Optional()` makes a missing directory yield no values.
+- `gonf.Watch` notices changed, new and removed files and the atomic swap
+  of `..data` that Kubernetes does on an update. It polls every 2 s; see
+  `source.WithTrigger`.
+- Gonf shows a value unless the key name looks secret (see
+  [Secrets](secrets.md)) or the Mapping field is a `gonf.Secret`.
+
 ## Formats
 
 **`.properties`** (`format/properties`): `key=value`, `key: value` or

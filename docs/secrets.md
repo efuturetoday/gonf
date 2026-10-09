@@ -59,6 +59,12 @@ to another Mapping.
 `cfg.Get` and `cfg.Lookup` return the real values: masking applies to
 output, not to reading.
 
+Values from a mounted secret directory (`dir.New`, see
+[Sources](sources.md#directory-with-one-file-per-key)) follow the same
+rules: only the key name, here the file name, or a `Secret` field makes
+them secret. A file called `api-key` is shown by `Explain` unless its
+Mapping field is a `gonf.Secret`.
+
 ## Encrypted values
 
 A value can be written encrypted, so that the file holds no plain secret:

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"runtime"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/efuturetoday/gonf"
@@ -129,13 +129,18 @@ func TestMapping_Get_NoCopyWithoutReferences(t *testing.T) {
 func TestMapping_Get_NotRegistered(t *testing.T) {
 	t.Parallel()
 	cfg := load(t, nil, nil, gonf.WithMappings(gonf.NewMapping[cacheConfig]("cache")))
+	var line int
 	defer func() {
 		r := recover()
-		if s, ok := r.(string); !ok || !strings.Contains(s, `mapping "db" not registered`) {
-			t.Errorf("recovered %v, want a panic naming the mapping", r)
+		want := fmt.Sprintf(`gonf: mapping "db" (made at mapping_test.go:%d) is not registered: pass it to Load with gonf.WithMappings, or boot.WithMappings`, line)
+		if s, ok := r.(string); !ok || s != want {
+			t.Errorf("recovered %v, want %q", r, want)
 		}
 	}()
-	gonf.NewMapping[dbConfig]("db").Get(cfg)
+	_, _, line, _ = runtime.Caller(0)
+	m := gonf.NewMapping[dbConfig]("db") // line + 1
+	line++
+	m.Get(cfg)
 }
 
 func TestWithMappings(t *testing.T) {

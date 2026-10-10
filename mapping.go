@@ -131,7 +131,11 @@ func (m *Mapping[T]) Get(c *Config) T {
 	b := c.mappings[m]
 	v, ok := b.value.(T)
 	if !ok {
-		panic(fmt.Sprintf("gonf: mapping %q not registered, add it with gonf.WithMappings", m.prefix))
+		made := ""
+		if m.location != "" {
+			made = " (made at " + m.location + ")"
+		}
+		panic(fmt.Sprintf("gonf: mapping %q%s is not registered: pass it to Load with gonf.WithMappings, or boot.WithMappings", m.prefix, made))
 	}
 	if !b.model.hasReferences {
 		return v

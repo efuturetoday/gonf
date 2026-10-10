@@ -47,8 +47,10 @@ func (s *flagSource) Load(context.Context) (map[string]gonf.Value, error) {
 // fs.PrintDefaults. The default of a secret is never shown.
 //
 // Keys with <name> or <n> are skipped, as a flag cannot be defined for
-// them; they can still be set by other Sources. Flags are strings, as gonf
-// converts the type when it binds. Define returns an error, and defines
+// them; they can still be set by other Sources. A key of type bool (or
+// *bool) gets a bool flag, so -debug alone means -debug=true; -debug=false
+// and the other spellings gonf reads, such as -debug=no, work too. All other
+// flags are strings, as gonf converts the type when it binds. Define returns an error, and defines
 // nothing, if a flag with the name of a key already exists.
 func Define(fs *flag.FlagSet, props []gonf.Property) error {
 	var fixed []gonf.Property
@@ -70,7 +72,30 @@ func Define(fs *flag.FlagSet, props []gonf.Property) error {
 		if p.Secret {
 			usage = strings.TrimSpace(usage + " (secret)")
 		}
+		if p.Type == "bool" || p.Type == "*bool" {
+			fs.Var(&boolValue{raw: def}, p.Key, usage)
+			continue
+		}
 		fs.String(p.Key, def, usage)
 	}
 	return nil
 }
+
+// boolValue is a flag that may be given without a value. It keeps the text,
+// as gonf checks and converts it when it binds.
+type boolValue struct{ raw string }
+
+func (b *boolValue) String() string {
+	if b == nil {
+		return ""
+	}
+	return b.raw
+}
+
+func (b *boolValue) Set(s string) error {
+	b.raw = s
+	return nil
+}
+
+// IsBoolFlag lets the flag package accept -name without a value as -name=true.
+func (b *boolValue) IsBoolFlag() bool { return true }

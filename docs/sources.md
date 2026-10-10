@@ -179,8 +179,9 @@ overrides the environment.
 
 `flagsource.Define` defines one flag per key, with the description as help
 text and the default shown by `PrintDefaults`. It skips keys with `<name>` or
-`<n>`, and never shows the default of a secret. All flags are strings; gonf
-converts the type when it binds. A flag that matches no key is reported as
+`<n>`, and never shows the default of a secret. A key of type `bool` gets a
+bool flag: `-debug` means `-debug=true`, and `-debug=false` or `-debug=no`
+work too. All other flags are strings; gonf converts the type when it binds. A flag that matches no key is reported as
 an unknown key, like any other Source.
 
 ```go

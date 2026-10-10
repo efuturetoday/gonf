@@ -129,8 +129,8 @@ see [Binding](binding.md#types). Variables that match no key, such as
 
 So `cfg.Get` and `${...}` find any key of a file as before, but a key from
 the environment only if a Mapping has it. To set a key from the
-environment, give it a Mapping. Explicit access to other variables comes
-with functions in expressions.
+environment, give it a Mapping. Any other variable is read explicitly with
+the function `env`: `${env::HOME}`.
 
 A Source of your own with such names implements `gonf.MappedSource`; it
 gets the keys and returns its values under them.
@@ -206,7 +206,31 @@ db.url=postgres://${db.host}:${db.port:5432}/app
 
 `${key}` is the value of `key` and an error if it has none; `${key:default}`
 falls back to `default`; `$${` is a literal `${`. References follow the same
-rules as other lookups, so profiles and environment variables apply.
+rules as other lookups, so profiles apply.
+
+`${name::arg}` calls a Function. boot registers these:
+
+| Function | Result |
+| --- | --- |
+| `${env::HOME}` | the environment variable, also one no Mapping has |
+| `${file::/run/secrets/tls.crt}` | the content of a file, at most 1 MiB; secret |
+| `${base64::...}`, `${base64-decode::...}` | the argument encoded or decoded |
+| `${uuid::}` | a random UUID |
+| `${aes-gcm::...}` | a decrypted value; secret, see [Secrets](secrets.md) |
+
+The argument is expanded first, so calls nest:
+`${base64::${file::/run/secrets/tls.crt}}`. A result that comes from a
+secret Function is masked, also through the Functions around it. A Function
+runs once per load for the same argument, so `${uuid::}` gives one value in
+every key that uses it; a Function that must stay the same across reloads
+keeps its result itself. A fallback nests too: `${app.home:${env::HOME}}`.
+
+Your own Function is a `gonf.Function{Name, IsSecret, Call}`, passed to
+`boot.WithFunctions` or `gonf.WithFunctions`; one with the name of a default
+replaces it.
+
+`cfg.Eval` evaluates an expression without a key, for example
+`cfg.Eval("${env::HOME}/logs")`.
 
 ## Your own Source
 

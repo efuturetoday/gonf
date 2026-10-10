@@ -90,7 +90,7 @@ func TestNew_Empty(t *testing.T) {
 	}
 }
 
-func TestNewTrimmed(t *testing.T) {
+func TestNew_TrimNewline(t *testing.T) {
 	t.Parallel()
 	tests := []struct{ name, content, want string }{
 		{"none", "a", "a"},
@@ -105,7 +105,7 @@ func TestNewTrimmed(t *testing.T) {
 			t.Parallel()
 			d := t.TempDir()
 			write(t, filepath.Join(d, "k"), tt.content)
-			if got := raws(t, dir.NewTrimmed(d))["k"]; got != tt.want {
+			if got := raws(t, dir.New(d, dir.TrimNewline()))["k"]; got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})

@@ -56,6 +56,21 @@ func WithTrigger(trigger Trigger) Option {
 	return func(m *Meta) { m.trigger = trigger }
 }
 
+// Extension returns an Option for a provider's own setting, stored in Meta
+// under key and read back with Meta.Extension. key should be a value of an
+// unexported type of the provider package, so that no other package can
+// clash with it. A provider offers its own options this way, such as
+// dir.TrimNewline, and reads them with NewMeta(...).Extension(key). Other
+// Sources ignore it.
+func Extension(key, value any) Option {
+	return func(m *Meta) {
+		if m.extensions == nil {
+			m.extensions = map[any]any{}
+		}
+		m.extensions[key] = value
+	}
+}
+
 // Meta holds the name, ordinal, optionality and profile of a Source. Providers embed
 // it to implement the Name and Ordinal methods of gonf.Source and to support
 // the common Options.
@@ -66,6 +81,7 @@ type Meta struct {
 	profile    string
 	match      KeyMatcher
 	trigger    Trigger
+	extensions map[any]any
 }
 
 // NewMeta returns a Meta with the provider's defaults, overridden by opts.
@@ -88,3 +104,9 @@ func (m Meta) IsOptional() bool { return m.isOptional }
 
 // Profile returns the profile given with WithProfile, or "".
 func (m Meta) Profile() string { return m.profile }
+
+// Extension returns the value given with source.Extension for key.
+func (m Meta) Extension(key any) (value any, ok bool) {
+	value, ok = m.extensions[key]
+	return value, ok
+}

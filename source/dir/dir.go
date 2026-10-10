@@ -29,7 +29,7 @@ const MaxFileSize = 1 << 20
 //
 // Every regular file directly in the directory is a key: the file name is
 // the key, e.g. "db.password", and the content, exactly as written, the
-// value. A newline at the end of the content stays; see NewTrimmed.
+// value. A newline at the end of the content stays; see TrimNewline.
 //
 // Names starting with ".." are ignored, as are subdirectories. Kubernetes
 // fills a mounted directory with symbolic links such as
@@ -43,19 +43,19 @@ const MaxFileSize = 1 << 20
 // disappears, and when Kubernetes swaps "..data" for a new directory.
 // With source.Optional a missing directory yields no values.
 func New(path string, opts ...source.Option) gonf.Source {
-	return newSource(path, false, opts)
-}
-
-// NewTrimmed is like New, but removes one newline ("\n" or "\r\n") from the
-// end of every value, so that a file written with echo holds the value
-// without the newline. Further newlines and other white space stay.
-func NewTrimmed(path string, opts ...source.Option) gonf.Source {
-	return newSource(path, true, opts)
-}
-
-func newSource(path string, trim bool, opts []source.Option) gonf.Source {
 	opts = append([]source.Option{source.WithOrdinal(Ordinal)}, opts...)
+	_, trim := source.NewMeta("", 0, opts...).Extension(trimKey{})
 	return source.New("dir:"+path, reader(path, trim), format{}, opts...)
+}
+
+type trimKey struct{}
+
+// TrimNewline is an Option for New. It removes one newline ("\n" or
+// "\r\n") from the end of every value, so that a file written with echo
+// holds the value without the newline. Further newlines and other white
+// space stay.
+func TrimNewline() source.Option {
+	return source.Extension(trimKey{}, true)
 }
 
 type entry struct {

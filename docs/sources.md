@@ -71,7 +71,7 @@ cfg, err := boot.Load(ctx,
 ```
 
 - Content is kept exactly. A file written with `echo` ends in a newline,
-  and so does the value. `dir.NewTrimmed(path)` removes one trailing
+  and so does the value. `dir.New(path, dir.TrimNewline())` removes one trailing
   newline (`\n` or `\r\n`) from every value.
 - Files and directories starting with `..` (`..data`, `..2026_01_02...`)
   are ignored, and so are subdirectories.

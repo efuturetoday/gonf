@@ -9,13 +9,17 @@ Set Height 420
 Set Padding 24
 Set Framerate 15
 Set TypingSpeed 40ms
+Env BASH_SILENCE_DEPRECATION_WARNING "1"
+Env BAT_THEME "Dracula"
+Env PS1 "$ "
 
 Hide
-Type "export PS1='$ ' && cd examples/quickstart && go build -o /dev/null . && clear"
+Type "cd examples/quickstart && go build -o /dev/null . && clear"
 Enter
+Sleep 8s
 Show
 
-Type "cat config/app.properties"
+Type "bat --style=plain --paging=never config/app.properties"
 Enter
 Sleep 1.5s
 

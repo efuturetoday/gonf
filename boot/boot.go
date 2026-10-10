@@ -10,7 +10,9 @@
 //	250  app.<ext> in an embedded file system (WithFS)
 //
 // for every known extension ("properties" and "json", more with
-// WithFormat). All files are optional. The active profiles come from the
+// WithFormat). All files are optional. WithDir reads another directory
+// instead of the working directory; WithoutEnv leaves out the environment
+// and .env. The active profiles come from the
 // key gonf.profile, e.g. GONF_PROFILE=dev,local; for each of them Load also
 // reads app-<profile>.<ext> next to every app.<ext>, with the same ordinal.
 // Files of inactive profiles are never read.
@@ -87,6 +89,10 @@ type options struct {
 	trigger   func(path string) source.Trigger
 	functions []gonf.Function
 	core      []gonf.Option
+	// dir is the directory of WithDir, "" for the working directory.
+	dir string
+	// isWithoutEnv is set by WithoutEnv.
+	isWithoutEnv bool
 }
 
 type format struct {
@@ -146,6 +152,20 @@ func WithFS(fsys fs.FS) Option {
 // Load ignores it.
 func WithFileTrigger(trigger func(path string) source.Trigger) Option {
 	return func(o *options) { o.trigger = trigger }
+}
+
+// WithDir makes Load read config/ and .env in dir instead of the working
+// directory, e.g. the root of a module from a test in a package below it.
+func WithDir(dir string) Option {
+	return func(o *options) { o.dir = dir }
+}
+
+// WithoutEnv makes Load read neither the environment nor .env, e.g. in a
+// test that must not depend on the variables of the machine it runs on.
+// The profile key then comes from the files only. A value can still read
+// a variable on purpose with ${env::NAME}.
+func WithoutEnv() Option {
+	return func(o *options) { o.isWithoutEnv = true }
 }
 
 // With passes options to gonf.Load, after the ones of boot. Sources added
@@ -209,6 +229,9 @@ func build(workDir string, opts []Option) []gonf.Option {
 	for _, opt := range opts {
 		opt(&o)
 	}
+	if o.dir != "" {
+		workDir = o.dir
+	}
 
 	onDisk := func(path string, f source.Format, opts ...source.Option) gonf.Source {
 		if o.trigger != nil {
@@ -239,11 +262,13 @@ func build(workDir string, opts []Option) []gonf.Option {
 			srcs = append(srcs, loc.open(BaseName+"."+f.ext, f.format, source.Optional(), source.WithOrdinal(loc.ordinal)))
 		}
 	}
-	srcs = append(srcs,
-		onDisk(filepath.Join(workDir, DotenvFile), dotenv.Format,
-			source.Optional(), source.WithOrdinal(DotenvOrdinal), source.WithKeyMatcher(env.Match)),
-		env.New(),
-	)
+	if !o.isWithoutEnv {
+		srcs = append(srcs,
+			onDisk(filepath.Join(workDir, DotenvFile), dotenv.Format,
+				source.Optional(), source.WithOrdinal(DotenvOrdinal), source.WithKeyMatcher(env.Match)),
+			env.New(),
+		)
+	}
 
 	core := []gonf.Option{
 		gonf.WithSources(srcs...),

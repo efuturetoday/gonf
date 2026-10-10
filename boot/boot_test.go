@@ -386,6 +386,51 @@ func TestLoad_Errors(t *testing.T) {
 	}
 }
 
+func TestWithDir(t *testing.T) {
+	t.Parallel()
+	dir := workDir(t, map[string]string{"config/app.properties": "boottest.config=from-dir\n"})
+	cfg, err := load(t.TempDir(), WithDir(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := cfg.Get("boottest.config"); v != "from-dir" {
+		t.Errorf("boottest.config = %q, want from-dir", v)
+	}
+}
+
+func TestWithoutEnv(t *testing.T) {
+	t.Setenv("BOOTTEST_ENV", "env")
+	t.Setenv("GONF_PROFILE", "boottest")
+	t.Setenv("BOOTTEST_HOME", "home")
+	dir := workDir(t, map[string]string{
+		".env":                  "BOOTTEST_DOTENV=dotenv\n",
+		"config/app.properties": "boottest.env=config\nboottest.url=${env::BOOTTEST_HOME}\n",
+	})
+	cfg, err := load(dir, WithoutEnv(), WithMappings(gonf.NewMapping[bootKeys]("boottest")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name     string
+		key      string
+		expected string
+	}{
+		{name: "environment is not read", key: "boottest.env", expected: "config"},
+		{name: ".env is not read", key: "boottest.dotenv", expected: ""},
+		{name: "env function still reads", key: "boottest.url", expected: "home"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cfg.Explain(tt.key).Value; got != tt.expected {
+				t.Errorf("%s = %q, want %q", tt.key, got, tt.expected)
+			}
+		})
+	}
+	if got := cfg.Profiles(); len(got) != 0 {
+		t.Errorf("Profiles = %v, want none from the environment", got)
+	}
+}
+
 func TestLoad_WorkingDirectory(t *testing.T) {
 	t.Parallel()
 	// Load uses the working directory; without files there it still works.

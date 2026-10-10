@@ -3,6 +3,7 @@ package gonf_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -248,31 +249,31 @@ func TestWithProfileKey_Invalid(t *testing.T) {
 	}
 }
 
+// factoryOf returns a SourceFactory with a Mapping without keys.
+func factoryOf(create func(context.Context) ([]gonf.Source, error)) gonf.SourceFactory {
+	return gonf.NewFactory(gonf.NewMapping[struct{}]("test.factory"),
+		func(ctx context.Context, _ struct{}) ([]gonf.Source, error) { return create(ctx) })
+}
+
+type vaultConfig struct {
+	Addr string
+}
+
 func TestWithFactories(t *testing.T) {
 	t.Parallel()
-	var seenProfiles []string
-	var seenOther bool
-	vault := func(_ context.Context, cfg *gonf.Config) ([]gonf.Source, error) {
-		seenProfiles = cfg.Profiles()
-		addr, err := cfg.Get("vault.addr")
-		if err != nil {
-			return nil, err
-		}
-		return []gonf.Source{memory.New(map[string]string{
-			"db.password":      "secret-from-" + addr,
-			"%dev.db.password": "dev-secret",
-			"app.profile":      "prod",
-		}, source.WithName("vault:"+addr), source.WithOrdinal(100))}, nil
-	}
-	other := func(_ context.Context, cfg *gonf.Config) ([]gonf.Source, error) {
-		_, seenOther = cfg.Lookup("db.password")
-		return nil, nil
-	}
+	vault := gonf.NewFactory(gonf.NewMapping[vaultConfig]("vault"),
+		func(_ context.Context, v vaultConfig) ([]gonf.Source, error) {
+			return []gonf.Source{memory.New(map[string]string{
+				"db.password":      "secret-from-" + v.Addr,
+				"%dev.db.password": "dev-secret",
+				"app.profile":      "prod",
+			}, source.WithName("vault:"+v.Addr), source.WithOrdinal(100))}, nil
+		})
 	cfg, err := gonf.Load(context.Background(),
-		gonf.WithFactories(vault, other),
+		gonf.WithFactories(vault),
 		gonf.WithSources(memory.New(map[string]string{
-			"vault.addr":  "${vault.host}:8200",
-			"vault.host":  "localhost",
+			"vault.addr":  "${net.host}:8200",
+			"net.host":    "localhost",
 			"db.password": "from-file",
 			"db.user":     "app",
 		}, source.WithName("file:app"), source.WithOrdinal(100))),
@@ -303,69 +304,153 @@ func TestWithFactories(t *testing.T) {
 		if got := cfg.Profiles(); len(got) != 0 {
 			t.Errorf("Profiles = %v, want none", got)
 		}
-		if len(seenProfiles) != 0 {
-			t.Errorf("factory saw profiles %v, want none", seenProfiles)
+	})
+	t.Run("factory Mapping is registered", func(t *testing.T) {
+		e := cfg.Explain("vault.addr")
+		if e.Property == nil || e.Value != "localhost:8200" {
+			t.Errorf("Explain(vault.addr) = %+v, want a Property and localhost:8200", e)
 		}
 	})
-	t.Run("factory sees first phase values", func(t *testing.T) {
-		if !seenOther {
-			t.Error("factory did not see first phase value db.password")
-		}
-	})
+}
+
+type configmapConfig struct {
+	Name string
 }
 
 func TestWithFactories_SeesProfiles(t *testing.T) {
 	t.Parallel()
-	var seenProfiles []string
-	var seenValue string
-	factory := func(_ context.Context, cfg *gonf.Config) ([]gonf.Source, error) {
-		seenProfiles = cfg.Profiles()
-		seenValue, _ = cfg.Get("configmap")
-		return nil, nil
+	var seen string
+	factory := gonf.NewFactory(gonf.NewMapping[configmapConfig]("configmap"),
+		func(_ context.Context, v configmapConfig) ([]gonf.Source, error) {
+			seen = v.Name
+			return nil, nil
+		})
+	tests := []struct {
+		name     string
+		opts     []gonf.Option
+		expected string
+	}{
+		{
+			name: "profile value",
+			opts: []gonf.Option{gonf.WithSources(memory.New(map[string]string{
+				"configmap.name": "app", "%dev.configmap.name": "app-dev",
+			}))},
+			expected: "app-dev",
+		},
+		{
+			name: "profile source",
+			opts: []gonf.Option{
+				gonf.WithSources(memory.New(map[string]string{"configmap.name": "app"})),
+				gonf.WithProfileSources(func(profile string) []gonf.Source {
+					return []gonf.Source{memory.New(map[string]string{"%" + profile + ".configmap.name": "app-" + profile},
+						source.WithName("test:"+profile))}
+				}),
+			},
+			expected: "app-dev",
+		},
 	}
-	_, err := gonf.Load(context.Background(),
-		gonf.WithSources(memory.New(map[string]string{"configmap": "app", "%dev.configmap": "app-dev"})),
-		gonf.WithProfiles("dev"),
-		gonf.WithFactories(factory),
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			seen = ""
+			_, err := gonf.Load(context.Background(),
+				append(tt.opts, gonf.WithProfiles("dev"), gonf.WithFactories(factory))...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if seen != tt.expected {
+				t.Errorf("factory saw configmap.name %q, want %q", seen, tt.expected)
+			}
+		})
+	}
+}
+
+func TestWithProfileSources(t *testing.T) {
+	t.Parallel()
+	var calls []string
+	cfg, err := gonf.Load(context.Background(),
+		gonf.WithSources(memory.New(map[string]string{"a": "base"})),
+		gonf.WithProfiles("dev", "local"),
+		gonf.WithProfileSources(func(profile string) []gonf.Source {
+			calls = append(calls, profile)
+			return []gonf.Source{memory.New(map[string]string{"%" + profile + ".a": profile},
+				source.WithName("test:"+profile))}
+		}),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(seenProfiles, []string{"dev"}) || seenValue != "app-dev" {
-		t.Errorf("factory saw profiles %v and configmap %q, want [dev] and %q", seenProfiles, seenValue, "app-dev")
+	if !slices.Equal(calls, []string{"dev", "local"}) {
+		t.Errorf("called for %v, want [dev local]", calls)
+	}
+	if v, _ := cfg.Get("a"); v != "local" {
+		t.Errorf("a = %q, want local, the last profile", v)
 	}
 }
 
-func TestWithFactories_SeesOnlyFirstPhase(t *testing.T) {
+func TestWithFactories_FactoryKeys(t *testing.T) {
 	t.Parallel()
-	first := func(context.Context, *gonf.Config) ([]gonf.Source, error) {
-		return []gonf.Source{memory.New(map[string]string{"from.first": "x"}, source.WithName("test:first"))}, nil
+	first := factoryOf(func(context.Context) ([]gonf.Source, error) {
+		return []gonf.Source{memory.New(map[string]string{
+			"vault.addr":        "other",
+			"%dev.vault.addr":   "other-dev",
+			"vaulted.unrelated": "x",
+		}, source.WithName("test:first"))}, nil
+	})
+	vault := gonf.NewFactory(gonf.NewMapping[vaultConfig]("vault"),
+		func(context.Context, vaultConfig) ([]gonf.Source, error) { return nil, nil })
+	_, err := gonf.Load(context.Background(),
+		gonf.WithSources(memory.New(map[string]string{"vault.addr": "localhost"})),
+		gonf.WithFactories(first, vault))
+	var se *gonf.SourceError
+	if !errors.As(err, &se) || se.Source != "test:first" {
+		t.Fatalf("err = %v, want a SourceError for test:first", err)
 	}
-	var isVisible bool
-	second := func(_ context.Context, cfg *gonf.Config) ([]gonf.Source, error) {
-		_, isVisible = cfg.Lookup("from.first")
-		return nil, nil
+	for _, want := range []string{`sets "vault.addr", a key of a source factory`, `sets "vault.addr"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want %q", err, want)
+		}
 	}
-	cfg, err := gonf.Load(context.Background(), gonf.WithFactories(first, second))
-	if err != nil {
-		t.Fatal(err)
+	if strings.Contains(err.Error(), "vaulted") {
+		t.Errorf("err = %v, names a key outside the prefix", err)
 	}
-	if isVisible {
-		t.Error("second factory saw a Source of the first factory")
+	if n := strings.Count(err.Error(), "sets "); n != 2 {
+		t.Errorf("err = %v, want 2 keys, also the profile key", err)
 	}
-	if _, ok := cfg.Lookup("from.first"); !ok {
-		t.Error("Source of the first factory is missing in the result")
+}
+
+func TestNewFactory_Panics(t *testing.T) {
+	t.Parallel()
+	create := func(context.Context, vaultConfig) ([]gonf.Source, error) { return nil, nil }
+	tests := []struct {
+		name     string
+		call     func()
+		expected string
+	}{
+		{name: "nil mapping", call: func() { gonf.NewFactory(nil, create) }, expected: "needs a Mapping"},
+		{name: "no prefix", call: func() { gonf.NewFactory(gonf.NewMapping[vaultConfig](""), create) }, expected: "needs a prefix (load_test.go:"},
+		{name: "nil create", call: func() { gonf.NewFactory(gonf.NewMapping[vaultConfig]("vault"), nil) }, expected: "needs a create function"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if r := recover(); r == nil || !strings.Contains(fmt.Sprint(r), tt.expected) {
+					t.Errorf("recovered %v, want a panic with %q", r, tt.expected)
+				}
+			}()
+			tt.call()
+		})
 	}
 }
 
 func TestWithFactories_Errors(t *testing.T) {
 	t.Parallel()
-	failing := func(context.Context, *gonf.Config) ([]gonf.Source, error) {
+	failing := factoryOf(func(context.Context) ([]gonf.Source, error) {
 		return nil, errors.New("vault: unreachable")
-	}
-	badSource := func(context.Context, *gonf.Config) ([]gonf.Source, error) {
+	})
+	badSource := factoryOf(func(context.Context) ([]gonf.Source, error) {
 		return []gonf.Source{failingSource{"test:remote"}}, nil
-	}
+	})
 
 	t.Run("all factory errors are collected", func(t *testing.T) {
 		t.Parallel()
@@ -381,16 +466,33 @@ func TestWithFactories_Errors(t *testing.T) {
 	t.Run("first phase error stops factories", func(t *testing.T) {
 		t.Parallel()
 		var isCalled bool
-		factory := func(context.Context, *gonf.Config) ([]gonf.Source, error) {
+		factory := factoryOf(func(context.Context) ([]gonf.Source, error) {
 			isCalled = true
 			return nil, nil
-		}
+		})
 		_, err := gonf.Load(context.Background(),
 			gonf.WithSources(failingSource{"test:broken"}),
 			gonf.WithFactories(factory),
 		)
 		if err == nil || isCalled {
 			t.Errorf("err = %v, factory called = %v; want error and no call", err, isCalled)
+		}
+	})
+	t.Run("invalid factory configuration stops factories", func(t *testing.T) {
+		t.Parallel()
+		var isCalled bool
+		factory := gonf.NewFactory(gonf.NewMapping[portConfig]("app"),
+			func(context.Context, portConfig) ([]gonf.Source, error) {
+				isCalled = true
+				return nil, nil
+			})
+		_, err := gonf.Load(context.Background(),
+			gonf.WithSources(memory.New(map[string]string{"app.port": "eighty"})),
+			gonf.WithFactories(factory),
+		)
+		var be *gonf.BindError
+		if !errors.As(err, &be) || be.Prefix != "app" || isCalled {
+			t.Errorf("err = %v, factory called = %v; want a BindError for app and no call", err, isCalled)
 		}
 	})
 	t.Run("canceled context", func(t *testing.T) {
@@ -532,9 +634,9 @@ func TestLoad_InvalidSourceName(t *testing.T) {
 
 func TestLoad_Nil(t *testing.T) {
 	t.Parallel()
-	nilSource := func(context.Context, *gonf.Config) ([]gonf.Source, error) {
+	nilSource := factoryOf(func(context.Context) ([]gonf.Source, error) {
 		return []gonf.Source{nil}, nil
-	}
+	})
 	tests := []struct {
 		name          string
 		opts          []gonf.Option

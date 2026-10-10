@@ -27,6 +27,13 @@ keys. Keys whose names are known only at runtime, such as one block per
 tenant, go into a map field: `Tenants map[string]Tenant` binds
 `tenants.<name>.…`.
 
+A Mapping is the way an application reads its configuration: only then is
+a key checked at start, documented and known to the environment.
+`cfg.Get("key")` and `cfg.Eval("${...}")` also exist, for tools and for a
+value read on purpose without a Mapping, such as `${env::HOME}`; a key read
+that way is not checked at start, and the environment sets it only if a
+Mapping has it.
+
 `Get` panics if the Mapping was not registered, because that is a
 programming error; every configuration error is reported by `Load`.
 

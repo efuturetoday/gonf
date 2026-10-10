@@ -85,14 +85,8 @@ type options struct {
 	formats   []format
 	embedded  fs.FS
 	trigger   func(path string) source.Trigger
-	functions []function
+	functions []gonf.Function
 	core      []gonf.Option
-}
-
-type function struct {
-	fn gonf.Function
-	// mapping holds the keys the Function reads, nil if none.
-	mapping gonf.AnyMapping
 }
 
 type format struct {
@@ -121,17 +115,17 @@ func WithFormat(ext string, f source.Format) Option {
 //
 //	boot.WithFunctions(aesgcm.WithKey(key))
 //
-// Replacing aes-gcm also drops aesgcm.Mapping, which only the default
-// Function reads.
+// Replacing aes-gcm also drops aesgcm.Mapping, the Mapping of the default
+// Function.
 func WithFunctions(fns ...gonf.Function) Option {
 	return func(o *options) {
 		for _, fn := range fns {
-			i := slices.IndexFunc(o.functions, func(f function) bool { return f.fn.Name == fn.Name })
+			i := slices.IndexFunc(o.functions, func(f gonf.Function) bool { return f.Name == fn.Name })
 			if i < 0 {
-				o.functions = append(o.functions, function{fn: fn})
+				o.functions = append(o.functions, fn)
 				continue
 			}
-			o.functions[i] = function{fn: fn}
+			o.functions[i] = fn
 		}
 	}
 }
@@ -204,13 +198,13 @@ func build(workDir string, opts []Option) []gonf.Option {
 	o := options{formats: []format{
 		{ext: "properties", format: properties.Format},
 		{ext: "json", format: json.Format},
-	}, functions: []function{
-		{fn: env.Function()},
-		{fn: secretfile.Function()},
-		{fn: base64.Encode()},
-		{fn: base64.Decode()},
-		{fn: uuid.Function()},
-		{fn: aesgcm.Function(), mapping: aesgcm.Mapping},
+	}, functions: []gonf.Function{
+		env.Function(),
+		secretfile.Function(),
+		base64.Encode(),
+		base64.Decode(),
+		uuid.Function(),
+		aesgcm.Function(),
 	}}
 	for _, opt := range opts {
 		opt(&o)
@@ -254,13 +248,8 @@ func build(workDir string, opts []Option) []gonf.Option {
 	core := []gonf.Option{
 		gonf.WithSources(srcs...),
 		gonf.WithProfileKey(ProfileKey),
-		gonf.WithFactories(profileFiles(locations, o.formats)),
-	}
-	for _, f := range o.functions {
-		core = append(core, gonf.WithFunctions(f.fn))
-		if f.mapping != nil {
-			core = append(core, gonf.WithMappings(f.mapping))
-		}
+		gonf.WithProfileSources(profileFiles(locations, o.formats)),
+		gonf.WithFunctions(o.functions...),
 	}
 	return append(core, o.core...)
 }
@@ -271,21 +260,19 @@ func never(ctx context.Context, _ func()) error {
 	return nil
 }
 
-// profileFiles returns a factory that reads app-<profile>.<ext> for every
-// active profile in every location.
-func profileFiles(locations []location, formats []format) gonf.SourceFactory {
-	return func(_ context.Context, cfg *gonf.Config) ([]gonf.Source, error) {
+// profileFiles returns the Sources app-<profile>.<ext> of a profile in
+// every location.
+func profileFiles(locations []location, formats []format) func(profile string) []gonf.Source {
+	return func(profile string) []gonf.Source {
 		var srcs []gonf.Source
-		for _, profile := range cfg.Profiles() {
-			for _, loc := range locations {
-				for _, f := range formats {
-					name := fmt.Sprintf("%s-%s.%s", BaseName, profile, f.ext)
-					srcs = append(srcs, loc.open(name, f.format,
-						source.Optional(), source.WithOrdinal(loc.ordinal), source.WithProfile(profile)))
-				}
+		for _, loc := range locations {
+			for _, f := range formats {
+				name := fmt.Sprintf("%s-%s.%s", BaseName, profile, f.ext)
+				srcs = append(srcs, loc.open(name, f.format,
+					source.Optional(), source.WithOrdinal(loc.ordinal), source.WithProfile(profile)))
 			}
 		}
-		return srcs, nil
+		return srcs
 	}
 }
 

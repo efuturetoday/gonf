@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -16,16 +17,18 @@ import (
 type Option func(*loadOptions)
 
 type loadOptions struct {
-	sources    []Source
-	factories  []SourceFactory
-	profiles   []string
-	profileKey string
-	mappings   []AnyMapping
-	validator  func(v any) error
-	converters []converter
-	onReload   func(cfg *Config, err error)
-	logger     *slog.Logger
-	functions  []Function
+	sources   []Source
+	factories []SourceFactory
+	// profileSources are the functions of WithProfileSources.
+	profileSources []func(profile string) []Source
+	profiles       []string
+	profileKey     string
+	mappings       []AnyMapping
+	validator      func(v any) error
+	converters     []converter
+	onReload       func(cfg *Config, err error)
+	logger         *slog.Logger
+	functions      []Function
 }
 
 // WithSources adds Sources. Can be passed multiple times; the order of
@@ -55,40 +58,98 @@ func WithProfileKey(key string) Option {
 	return func(o *loadOptions) { o.profileKey = key }
 }
 
-// SourceFactory creates Sources from configuration that is already loaded,
-// e.g. a Vault Source whose address is configured in a file. cfg holds the
-// Sources given with WithSources and the active profiles; it does not
-// contain Sources of other factories. A factory with nothing to contribute
-// returns no Sources. Errors should say which factory failed.
+// WithProfileSources adds Sources for every active profile, such as the
+// file app-<profile>.yaml. Load calls sources once per active profile, in
+// the order of the profiles, after the active profiles are settled, and
+// loads the Sources it returns together with those of WithSources, so a
+// SourceFactory sees them. They count as registered after the Sources of
+// WithSources. gonf closes them like the Sources of a factory.
+func WithProfileSources(sources func(profile string) []Source) Option {
+	return func(o *loadOptions) {
+		o.profileSources = append(o.profileSources, sources)
+	}
+}
+
+// A SourceFactory creates Sources that need configuration themselves, e.g.
+// a Vault Source whose address is configured in a file. Create one with
+// NewFactory.
+type SourceFactory interface {
+	// Mapping returns the Mapping the factory reads its configuration
+	// from.
+	Mapping() AnyMapping
+	create(ctx context.Context, cfg *Config) ([]Source, error)
+}
+
+// NewFactory returns a SourceFactory that creates Sources from the
+// configuration in m. Load binds m before the factory runs, from the
+// Sources of WithSources and WithProfileSources, and passes the value to
+// create. m is registered like a Mapping of WithMappings: Describe,
+// Explain, the schema and the environment know its keys.
+//
+// The Sources a factory creates must not set a key under the prefix of
+// the Mapping of any factory, since that configuration was read before
+// they were loaded: it is a Load error. NewFactory panics if m is nil or
+// has no prefix, or if create is nil.
+//
+// A factory with nothing to contribute returns no Sources. Errors should
+// say which factory failed.
 //
 // The Sources a factory returns belong to gonf. If one implements
 // io.Closer, gonf closes it when it is no longer needed: Load right after
 // loading it, Watch when a reload replaces it or fails, and when watching
-// stops. Load ignores errors from Close, Watch logs them. A factory may return a Source it
-// returned before; Watch keeps it open while it is in use. Only Watch
-// benefits from that, since Load closes every Source it got.
+// stops. Load ignores errors from Close, Watch logs them. A factory may
+// return a Source it returned before; Watch keeps it open while it is in
+// use. Only Watch benefits from that, since Load closes every Source it
+// got.
 //
 // Separate calls of Load or Watch may run a factory concurrently, so state
 // it keeps between calls must be safe for concurrent use. Within one Watch
 // a factory runs on one goroutine at a time.
-type SourceFactory func(ctx context.Context, cfg *Config) ([]Source, error)
+func NewFactory[T any](m *Mapping[T], create func(ctx context.Context, v T) ([]Source, error)) SourceFactory {
+	switch {
+	case m == nil:
+		panic("gonf: NewFactory needs a Mapping")
+	case m.Prefix() == "":
+		panic(fmt.Sprintf("gonf: the Mapping of a source factory needs a prefix (%s)", where(m.origin())))
+	case create == nil:
+		panic("gonf: NewFactory needs a create function")
+	}
+	return &factory[T]{mapping: m, fn: create}
+}
 
-// WithFactories adds SourceFactories. They run after the Sources given with
-// WithSources have been loaded; their Sources count as registered after
-// those.
+type factory[T any] struct {
+	mapping *Mapping[T]
+	fn      func(ctx context.Context, v T) ([]Source, error)
+}
+
+func (f *factory[T]) Mapping() AnyMapping { return f.mapping }
+
+func (f *factory[T]) create(ctx context.Context, cfg *Config) ([]Source, error) {
+	return f.fn(ctx, f.mapping.Get(cfg))
+}
+
+// WithFactories adds SourceFactories and registers their Mappings. They
+// run after the Sources of WithSources and WithProfileSources have been
+// loaded; their Sources count as registered after those.
 func WithFactories(factories ...SourceFactory) Option {
 	return func(o *loadOptions) {
 		o.factories = append(o.factories, factories...)
+		for _, f := range factories {
+			if f != nil {
+				o.mappings = append(o.mappings, f.Mapping())
+			}
+		}
 	}
 }
 
 // Load reads all Sources once and merges them into a Config.
 //
 // Load works in two phases. First it loads the Sources given with
-// WithSources and settles the active profiles. Then it passes the result to
+// WithSources, settles the active profiles, loads the Sources of
+// WithProfileSources and binds the Mappings of the factories. Then it runs
 // every SourceFactory and loads the Sources they return. If the first phase
-// fails, no factory runs. Finally it binds the Mappings given with
-// WithMappings and returns the BindErrors of all of them together.
+// fails, no factory runs. Finally it binds all Mappings and returns the
+// BindErrors of all of them together.
 //
 // Every Source is loaded even if an earlier one fails; all failures are
 // returned together, as SourceErrors joined with errors.Join.
@@ -131,12 +192,24 @@ func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
 			return nil, nil, err
 		}
 	}
+	var created []Source
+	for _, profile := range slices.Backward(profiles) { // profiles is strongest first
+		for _, sources := range o.profileSources {
+			created = append(created, sources(profile)...)
+		}
+	}
+	if len(created) > 0 {
+		ps, err := loadSources(ctx, created, in)
+		if err != nil {
+			return nil, created, err
+		}
+		loaded = append(loaded, ps...)
+	}
 	cfg := newConfig(loaded, profiles)
 	cfg.validator, cfg.converters, cfg.functions = o.validator, cs, fns
-	var created []Source
 	if len(o.factories) > 0 {
-		var late []loadedSource
-		late, created, err = runFactories(ctx, o.factories, cfg, in)
+		late, made, err := runFactories(ctx, o.factories, cfg, in)
+		created = append(created, made...)
 		if err != nil {
 			return nil, created, err
 		}
@@ -174,21 +247,28 @@ func isSame(a, b Source) bool {
 	return ta == reflect.TypeOf(b) && ta.Comparable() && a == b
 }
 
-// runFactories passes cfg to every factory and loads the Sources they
-// return. It runs all factories and reports all failures together. It
-// returns the Sources the factories created, also on error.
+// runFactories binds the Mappings of factories on cfg, runs every factory
+// with its configuration and loads the Sources they return. It runs all
+// factories and reports all failures together. It returns the Sources the
+// factories created, also on error.
 func runFactories(ctx context.Context, factories []SourceFactory, cfg *Config, in loadInput) ([]loadedSource, []Source, error) {
+	var mappings []AnyMapping
+	for _, f := range factories {
+		if f == nil {
+			return nil, nil, errNilFactory
+		}
+		mappings = append(mappings, f.Mapping())
+	}
+	if err := cfg.bindMappings(mappings); err != nil {
+		return nil, nil, err
+	}
 	var created []Source
 	var errs []error
-	for _, factory := range factories {
+	for _, f := range factories {
 		if err := ctx.Err(); err != nil {
 			return nil, created, err
 		}
-		if factory == nil {
-			errs = append(errs, errNilFactory)
-			continue
-		}
-		srcs, err := factory(ctx, cfg)
+		srcs, err := f.create(ctx, cfg)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("gonf: source factory: %w", err))
 			continue
@@ -199,7 +279,30 @@ func runFactories(ctx context.Context, factories []SourceFactory, cfg *Config, i
 	if err != nil {
 		errs = append(errs, err)
 	}
+	errs = append(errs, factoryKeyErrors(late, mappings)...)
 	return late, created, errors.Join(errs...)
+}
+
+// factoryKeyErrors reports every key of late, a Source of a factory, under
+// the prefix of one of mappings, the Mappings of the factories.
+func factoryKeyErrors(late []loadedSource, mappings []AnyMapping) []error {
+	var errs []error
+	for _, s := range late {
+		for _, key := range slices.Sorted(maps.Keys(s.values)) {
+			name := key
+			if strings.HasPrefix(key, "%") {
+				_, name, _ = splitProfileKey(key)
+			}
+			for _, m := range mappings {
+				if name == m.Prefix() || strings.HasPrefix(name, m.Prefix()+".") {
+					errs = append(errs, &SourceError{Source: s.src.Name(),
+						Err: fmt.Errorf("sets %q, a key of a source factory, which was read before the factory ran", name)})
+					break
+				}
+			}
+		}
+	}
+	return errs
 }
 
 // loadInput is what a MappedSource gets: the known keys, computed when

@@ -225,12 +225,16 @@ runs once per load for the same argument, so `${uuid::}` gives one value in
 every key that uses it; a Function that must stay the same across reloads
 keeps its result itself. A fallback nests too: `${app.home:${env::HOME}}`.
 
-Your own Function is a `gonf.Function{Name, IsSecret, Call}`, passed to
-`boot.WithFunctions` or `gonf.WithFunctions`; one with the name of a default
-replaces it.
+Your own Function is a `gonf.Function{Name, IsSecret, Call, Mapping}`,
+passed to `boot.WithFunctions` or `gonf.WithFunctions`; one with the name of
+a default replaces it. `Mapping` declares the keys the Function reads, such
+as the key of `aes-gcm`, so they are documented and the environment can set
+them.
 
 `cfg.Eval` evaluates an expression without a key, for example
-`cfg.Eval("${env::HOME}/logs")`.
+`cfg.Eval("${env::HOME}/logs")`. Like `cfg.Get`, it is for a value read on
+purpose; the configuration of an application goes through Mappings (see
+[Structs](binding.md)).
 
 ## Your own Source
 
@@ -249,27 +253,37 @@ type Source interface {
 For content in a known format, `source.New(name, read, format)` is enough.
 
 A Source that needs configuration itself, such as a Vault Source whose
-address is in `app.properties`, is created by a factory. It runs after the
-other Sources are loaded and reads them. The Mapping of `vault` lets the
-environment set the address too:
+address is in `app.properties`, is created by a factory. The factory brings
+its own Mapping: `Load` binds it from the other Sources, including the
+profile files, and passes the struct to the factory. Its keys are checked,
+documented and set from the environment like any other:
 
 ```go
-vault := func(ctx context.Context, cfg *gonf.Config) ([]gonf.Source, error) {
-	addr, err := cfg.Get("vault.address")
-	if errors.Is(err, gonf.ErrNotFound) {
-		return nil, nil // no Vault configured
-	}
-	if err != nil {
-		return nil, err
-	}
-	return []gonf.Source{newVaultSource(addr)}, nil
-}
-
 type Vault struct {
-	Address string `default:""`
+	Address  *string             `desc:"Address of the Vault; without it no Vault is used."`
+	ClientID string              `default:""`
+	Secret   *gonf.Secret[string]
 }
 
 var vaultMapping = gonf.NewMapping[Vault]("vault")
 
-cfg, err := boot.Load(ctx, boot.WithMappings(vaultMapping), boot.With(gonf.WithFactories(vault)))
+vault := gonf.NewFactory(vaultMapping, func(ctx context.Context, v Vault) ([]gonf.Source, error) {
+	if v.Address == nil {
+		return nil, nil // no Vault configured
+	}
+	return []gonf.Source{newVaultSource(*v.Address, v.ClientID, v.Secret)}, nil
+})
+
+cfg, err := boot.Load(ctx, boot.With(gonf.WithFactories(vault)))
 ```
+
+`VAULT_ADDRESS` in the environment, `vault.address` in a file or
+`/mnt/secrets/vault.secret` through the dir Source all work. Values the
+factory's Sources return, such as `db.password`, are bound with the other
+Mappings afterwards.
+
+A factory's Sources must not set a key under the prefix of any factory,
+since that configuration was read before they existed: `Load` fails and
+names the key. There are two phases, no chain: a factory cannot be
+configured by the Sources of another factory.
+

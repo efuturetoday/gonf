@@ -54,19 +54,21 @@ func ExampleConfig_Get() {
 	// Output: postgres://localhost:5432/app
 }
 
-func ExampleWithFactories() {
+func ExampleNewFactory() {
 	// A factory creates Sources that need configuration themselves, here a
-	// stand-in for a Vault Source whose address comes from a file.
-	vault := func(_ context.Context, cfg *gonf.Config) ([]gonf.Source, error) {
-		addr, err := cfg.Get("vault.addr")
-		if err != nil {
-			return nil, fmt.Errorf("vault: %w", err)
-		}
-		return []gonf.Source{memory.New(
-			map[string]string{"db.password": "s3cret"},
-			source.WithName("vault:"+addr),
-		)}, nil
+	// stand-in for a Vault Source whose address comes from a file. Its
+	// configuration is a Mapping like any other: typed, checked and
+	// documented.
+	type Vault struct {
+		Addr string `desc:"Address of the Vault."`
 	}
+	vault := gonf.NewFactory(gonf.NewMapping[Vault]("vault"),
+		func(_ context.Context, v Vault) ([]gonf.Source, error) {
+			return []gonf.Source{memory.New(
+				map[string]string{"db.password": "s3cret"},
+				source.WithName("vault:"+v.Addr),
+			)}, nil
+		})
 	cfg, err := gonf.Load(context.Background(),
 		gonf.WithSources(memory.New(map[string]string{"vault.addr": "https://vault:8200"})),
 		gonf.WithFactories(vault),
@@ -206,7 +208,7 @@ func ExampleConfig_Explanations() {
 	// app.dsn = postgres://app:****@prod/app (memory:overrides)
 	//   overrides postgres://app:${db.password}@localhost/app (file:app.properties)
 	// db.password = **** (file:app.properties)
-	// db.pool.max-size = 10 (default, example_test.go:188)
+	// db.pool.max-size = 10 (default, example_test.go:190)
 }
 
 func ExampleWithConverter() {

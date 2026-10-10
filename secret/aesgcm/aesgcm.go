@@ -3,8 +3,8 @@
 //
 //	db.password=${aes-gcm::DBJ2...}
 //
-// Register Function, and Mapping for its key, with gonf.WithFunctions and
-// gonf.WithMappings; boot does that on its own. Encrypt creates such
+// Register Function with gonf.WithFunctions, which registers Mapping for
+// its key too; boot does that on its own. Encrypt creates such
 // values.
 //
 // value is URL-safe base64, with or without padding, of one byte holding
@@ -38,9 +38,9 @@ type KeyConfig struct {
 	Key *gonf.Secret[string] `desc:"Key for ${aes-gcm::...} values."`
 }
 
-// Mapping binds KeyConfig to the prefix of Key. Registered with Function,
-// it makes Key a known key, so the environment provides it as
-// GONF_SECRET_AES_GCM_KEY. boot registers it with its default Functions.
+// Mapping binds KeyConfig to the prefix of Key. It is the Mapping of
+// Function and makes Key a known key, so the environment provides it as
+// GONF_SECRET_AES_GCM_KEY.
 var Mapping = gonf.NewMapping[KeyConfig](strings.TrimSuffix(Key, ".key"))
 
 // nonceSize is the nonce length Encrypt uses, the standard one of GCM.
@@ -49,7 +49,7 @@ const nonceSize = 12
 var errDecrypt = errors.New("wrong key or damaged value")
 
 // Function returns the secret gonf.Function Name that decrypts with the
-// key the configuration holds under Key. Register Mapping with it so that
+// key the configuration holds under Key. Its Mapping is Mapping, so that
 // the environment can provide the key. Any Source may provide the key,
 // except the Source of the encrypted value: a key next to the values it
 // protects protects nothing. The key is used as written; it must not
@@ -58,7 +58,7 @@ var errDecrypt = errors.New("wrong key or damaged value")
 // gonf caches results by value, not by Source: a value decrypted once is
 // not checked again where it appears in the Source of the key.
 func Function() gonf.Function {
-	return gonf.Function{Name: Name, IsSecret: true, Call: decryptWithConfig}
+	return gonf.Function{Name: Name, IsSecret: true, Call: decryptWithConfig, Mapping: Mapping}
 }
 
 // decryptWithConfig decrypts value with the key under Key.

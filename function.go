@@ -30,10 +30,15 @@ type Function struct {
 	//
 	// The error must not contain a secret result.
 	Call func(cfg *Config, arg string, origin Origin) (string, error)
+	// Mapping declares the keys Call reads, nil if none. WithFunctions
+	// registers it like a Mapping of WithMappings, so Describe, the
+	// schema and the environment know the keys. Call still reads them
+	// from cfg, as it may run before Mappings are bound.
+	Mapping AnyMapping
 }
 
-// WithFunctions registers Functions for ${name::arg} expressions. Two
-// Functions with the same name are a Load error.
+// WithFunctions registers Functions for ${name::arg} expressions and their
+// Mappings. Two Functions with the same name are a Load error.
 //
 // The results are cached per Load, keyed by name and expanded argument:
 // within one Config, ${uuid::} gives the same value everywhere, also in
@@ -43,6 +48,11 @@ type Function struct {
 func WithFunctions(fns ...Function) Option {
 	return func(o *loadOptions) {
 		o.functions = append(o.functions, fns...)
+		for _, fn := range fns {
+			if fn.Mapping != nil {
+				o.mappings = append(o.mappings, fn.Mapping)
+			}
+		}
 	}
 }
 

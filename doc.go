@@ -29,8 +29,8 @@
 // the list into the configuration reference of an application.
 //
 // Sources that need configuration themselves, such as a Vault Source whose
-// address is configured in a file, are created by a SourceFactory (see
-// WithFactories).
+// address is configured in a file, are created by a SourceFactory with a
+// Mapping of its own (see NewFactory).
 //
 // Watch keeps the configuration current: when a Source that implements
 // Watcher reports a change, it loads everything again and, if that

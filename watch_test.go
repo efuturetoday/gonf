@@ -282,9 +282,9 @@ func TestWatch_FactorySources(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		late := newLiveSource(map[string]string{"a": "1"})
-		factory := func(context.Context, *gonf.Config) ([]gonf.Source, error) {
+		factory := factoryOf(func(context.Context) ([]gonf.Source, error) {
 			return []gonf.Source{late}, nil
-		}
+		})
 		_, reloads := startWatch(t, gonf.WithFactories(factory))
 		receive(t, late.started)
 
@@ -331,13 +331,13 @@ func TestWatch_Stops(t *testing.T) {
 func sourceFactory() (gonf.SourceFactory, func() []*liveSource) {
 	var mu sync.Mutex
 	var created []*liveSource
-	factory := func(context.Context, *gonf.Config) ([]gonf.Source, error) {
+	factory := factoryOf(func(context.Context) ([]gonf.Source, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		src := newLiveSource(map[string]string{"late": "1"})
 		created = append(created, src)
 		return []gonf.Source{src}, nil
-	}
+	})
 	return factory, func() []*liveSource {
 		mu.Lock()
 		defer mu.Unlock()
@@ -405,9 +405,9 @@ func TestWatch_KeepsReturnedSourceOpen(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		src := newLiveSource(map[string]string{"app.port": "80"})
 		kept := newLiveSource(map[string]string{"late": "1"})
-		factory := func(context.Context, *gonf.Config) ([]gonf.Source, error) {
+		factory := factoryOf(func(context.Context) ([]gonf.Source, error) {
 			return []gonf.Source{kept}, nil
-		}
+		})
 		app := gonf.NewMapping[portConfig]("app")
 		_, reloads := startWatch(t, gonf.WithSources(src), gonf.WithFactories(factory), gonf.WithMappings(app))
 		receive(t, src.started)
@@ -444,9 +444,9 @@ func TestWatch_IncomparableSource(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		src := newLiveSource(map[string]string{"a": "1"})
-		factory := func(context.Context, *gonf.Config) ([]gonf.Source, error) {
+		factory := factoryOf(func(context.Context) ([]gonf.Source, error) {
 			return []gonf.Source{mapSource{}}, nil
-		}
+		})
 		_, reloads := startWatch(t, gonf.WithSources(src), gonf.WithFactories(factory))
 		receive(t, src.started)
 

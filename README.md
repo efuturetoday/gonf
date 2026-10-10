@@ -6,167 +6,207 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/efuturetoday/gonf.svg)](https://pkg.go.dev/github.com/efuturetoday/gonf) [![Build Status](https://img.shields.io/github/actions/workflow/status/efuturetoday/gonf/test.yml?branch=main)](https://github.com/efuturetoday/gonf/actions) [![Go Version](https://img.shields.io/github/go-mod/go-version/efuturetoday/gonf)](https://go.dev/) [![License](https://img.shields.io/github/license/efuturetoday/gonf)](./LICENSE)
 
-Layered configuration for Go: files, `.env`, the environment, flags and
-secret directories, with profiles, bound to typed structs that report every
-problem at once. The core uses only the standard library.
+gonf is configuration for Go services. You describe your settings in a
+struct, and gonf fills it from files, `.env`, the environment and flags,
+and checks everything when the program starts.
 
-## Why gonf
+## Features
 
-I built gonf because tracing a wrong value through environments, files and
-structs should not take an hour, and because every service should be
-configured the same way without losing flexibility.
+- **All mistakes at start, at once**, with the file and line and a
+  suggestion ("did you mean ...?").
+- **See where a value comes from**: which file and line, or which
+  environment variable, and what it replaced.
+- **Environment variables just work**: `APP_DB_URL` sets `app.db.url`. A
+  typo such as `APP_DB_PROT` gives a warning instead of being ignored.
+- **Profiles** for dev, test and prod.
+- **Secrets that never print**: they show as `****` in logs and output.
+- **Values that build on each other**: `postgres://${app.db.host}/app`,
+  or `${env::HOME}` to call a function.
+- **Reference docs and an editor schema** generated from your structs, so
+  they cannot drift.
+- **Safe live reload**: a broken change keeps the running configuration.
+- **Standard library only.**
 
-- **One way for every service.** `boot.Load` reads `config/`, `.env` and
-  the environment by convention; [profiles](docs/profiles.md), formats and
-  your own [sources](docs/sources.md) plug in.
-- **Values that build on each other.**
-  `db.url=postgres://${db.host}:${db.port:5432}/app`, resolved across all
-  sources.
-- **Environment checked against your structs.** Only variables that match
-  a field are read, map entries too. `DB_PROT` is a warning with the name
-  you meant, not a silent miss; Kubernetes service variables do not
-  trip it.
-- **Functions in values.** `${env::HOME}`, `${file::/run/secrets/tls.crt}`,
-  `${base64::...}`, `${uuid::}` and `${aes-gcm::...}` nest, and the result
-  of a secret one stays masked. See [Sources](docs/sources.md#expressions).
-- **Flags and Kubernetes secret directories.** [`flagsource`](docs/sources.md#command-line-flags)
-  turns a `flag.FlagSet` into a Source, [`dir`](docs/sources.md#directory-with-one-file-per-key)
-  reads a mounted Secret with one file per key.
-- **See where a value comes from.** [`cfg.Explain`](docs/explain.md) shows
-  the source, file and line, and what it overrides.
-- **Every problem at start, all at once.** [Binding](docs/binding.md)
-  reports all of them with their origin, and suggests the key you meant.
-- **Secrets that do not leak.** [`gonf.Secret[T]`](docs/secrets.md) prints
-  `****`; values can be stored encrypted.
-- **Safe live reload.** [`boot.Watch`](docs/reload.md) keeps the running
-  configuration when a change is broken.
-- **Docs that cannot drift.** [`boot.Describe`](docs/reference.md) writes
-  the configuration reference from the structs, and
-  [`boot.Schema`](docs/reference.md#json-schema) a JSON Schema so your
-  editor completes and checks the files.
-- **Standard library only.** The core has no dependencies.
-
-## Quick start
+## Getting started
 
 ```sh
 go get github.com/efuturetoday/gonf
 ```
 
-Declare what your application needs as a struct:
+Describe your settings as a struct. `default` and `desc` are optional:
 
 ```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"log"
-
-	"github.com/efuturetoday/gonf"
-	"github.com/efuturetoday/gonf/boot"
-)
-
 type Config struct {
-	Port int `default:"8080"`
+	Port int `default:"8080" desc:"HTTP port"`
 	DB   struct {
-		URL      string
-		Password gonf.Secret[string]
+		Host     string              `default:"localhost" desc:"database host"`
+		URL      string              `desc:"connection string"`
+		Password gonf.Secret[string] `default:"change-me"`
 	}
 }
 
 var appConfig = gonf.NewMapping[Config]("app")
+```
 
+`gonf.NewMapping` ties the struct to the name `app`: the field `DB.URL`
+becomes the key `app.db.url`. Put values in `config/app.properties`:
+
+```properties
+app.port=8000
+app.db.host=db.internal
+app.db.url=postgres://${app.db.host}:5432/app
+```
+
+Load the configuration and read the struct in `main.go`:
+
+```go
 func main() {
 	cfg, err := boot.Load(context.Background(), boot.WithMappings(appConfig))
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	for _, w := range cfg.Warnings() {
+		log.Println("warning:", w)
+	}
+
 	c := appConfig.Get(cfg)
-	fmt.Println(c.Port, c.DB.URL, c.DB.Password)
+	fmt.Println("port:    ", c.Port)
+	fmt.Println("db.url:  ", c.DB.URL)
+	fmt.Println("password:", c.DB.Password)
+
+	// go run . app.db.url
+	if len(os.Args) > 1 {
+		fmt.Println(cfg.Explain(os.Args[1]))
+	}
 }
 ```
 
-Put the values in `config/app.properties`:
+The complete program is in [`examples/quickstart`](./examples/quickstart).
+Run it from that directory:
+
+```text
+$ go run .
+port:     8000
+db.url:   postgres://db.internal:5432/app
+password: ****
+```
+
+`boot.Load` found `config/app.properties` by itself. Now set a value with
+an environment variable. It wins over the file:
+
+```text
+$ APP_PORT=9000 go run .
+port:     9000
+db.url:   postgres://db.internal:5432/app
+password: ****
+```
+
+That is the whole idea: a struct, a file, and the environment on top.
+
+## Examples
+
+Each example below runs against the quickstart program.
+
+### A mistake in the file
+
+Say `config/app.properties` has a typo, `ulr` instead of `url`:
+
+```properties
+app.port=8000
+app.db.host=db.internal
+app.db.ulr=postgres://${app.db.host}:5432/app
+```
+
+The program stops at start and reports every problem, not only the first:
+
+```text
+$ go run .
+gonf: bind "app": 2 problems:
+  app.db.url: required, no value
+  app.db.ulr: unknown key, did you mean app.db.url? (from file:config/app.properties:3)
+```
+
+A wrong type is caught the same way, for example `app.port=80x`:
+
+```text
+gonf: bind "app": app.port: invalid int "80x" (from file:config/app.properties:1)
+```
+
+### Where does a value come from?
+
+The quickstart prints `cfg.Explain(key)` for a key given on the command
+line:
+
+```text
+$ APP_PORT=9000 go run . app.port
+app.port = 9000 (env:APP_PORT)
+  overrides 8000 (file:config/app.properties:1)
+  default 8080 (main.go:30)
+```
+
+The first line is the value in use and where it comes from. The lines
+below show what it replaced, and the default from the struct tag. More in
+[Where does a value come from?](docs/explain.md).
+
+### Profiles
+
+A profile is a named set of values for one environment. Add
+`config/app-dev.properties`:
+
+```properties
+app.db.host=localhost
+```
+
+and start with `GONF_PROFILE=dev`:
+
+```text
+$ GONF_PROFILE=dev go run . app.db.url
+port:     8000
+db.url:   postgres://localhost:5432/app
+password: ****
+app.db.url = postgres://localhost:5432/app (file:config/app.properties:3)
+```
+
+The profile file replaced `app.db.host`, and `app.db.url`, which refers to
+it, followed. More in [Profiles](docs/profiles.md).
+
+### Secrets
+
+`Password` is a `gonf.Secret[string]`, so it prints as `****` with `fmt`,
+JSON, `slog` and in `Explain`. Your code gets the real value when it asks
+for it:
+
+```go
+password := c.DB.Password.Value()
+```
+
+More in [Secrets](docs/secrets.md).
+
+### Expressions and functions
+
+A value can refer to another key with `${...}`, as `app.db.url` does with
+`${app.db.host}`. A function takes the form `${name::argument}`. Read the
+password from the environment variable `DB_PASSWORD`:
 
 ```properties
 app.db.url=postgres://localhost/app
-%prod.app.port=80
+app.db.password=${env::DB_PASSWORD}
 ```
 
-Properties are one choice: JSON, YAML and `.env` files, the environment and
-your own sources work too.
-
-Run it:
-
-```console
-$ go run .
-gonf: bind "app": app.db.password: required, no value
-
-$ APP_DB_PASSWORD=s3cret go run .
-8080 postgres://localhost/app ****
-
-$ GONF_PROFILE=prod APP_DB_PASSWORD=s3cret go run .
-80 postgres://localhost/app ****
+```text
+$ DB_PASSWORD=s3cret go run . app.db.password
+port:     8080
+db.url:   postgres://localhost/app
+password: ****
+app.db.password = **** (file:config/app.properties:2, via env)
+  default **** (main.go:30)
 ```
 
-A missing value stops the start with a clear message, the environment
-fills it in (`APP_DB_PASSWORD` for `app.db.password`), the profile `prod`
-switches the port, and the password never shows up in output. A typo is
-caught too:
+If `DB_PASSWORD` is not set, the start fails with a message that names the
+key and the line. More in [Sources](docs/sources.md#expressions).
 
-```console
-gonf: bind "app": app.db.ulr: unknown key, did you mean app.db.url? (from file:config/app.properties:3)
-```
-
-## gonf, viper or koanf?
-
-All three load layered configuration. They differ in what they take care
-of for you.
-
-| | gonf | viper | koanf |
-| --- | --- | --- | --- |
-| Shape | typed structs (Mappings), checked at start | keys read by name, `Unmarshal` into structs | you assemble providers and parsers |
-| State | no global state | a global instance by default | an instance you create |
-| Keys | case-sensitive | case-insensitive | case-sensitive |
-| Environment | matched against your structs | derived by `AutomaticEnv` and `BindEnv` | `env` provider with a transform callback |
-
-Choose **gonf** for services that want typed structs checked at start with
-all errors at once, the origin of every value (`cfg.Explain`), profiles,
-secrets, environment variables matched against the structs, and docs and
-a schema generated from the code. Choose **viper** for its large ecosystem
-and remote providers. Choose **koanf** if you want to assemble providers
-and parsers yourself with few opinions.
-
-Coming from viper or koanf:
-
-- A Mapping per struct (`gonf.NewMapping[Config]("app")`) replaces
-  `Unmarshal`. Unknown keys and missing values fail at start.
-- Environment names come from the keys (`app.db.url` is `APP_DB_URL`), so
-  there is nothing to bind or transform.
-- Values may refer to others and call functions: `${app.db.host}`,
-  `${env::HOME}`.
-
-## How it works
-
-Every value comes from a Source, and every Source has an ordinal. For each
-key the highest ordinal wins. `boot.Load` reads, highest first:
-
-```
-300  environment variables          APP_DB_URL=...
-295  .env in the working directory  APP_DB_URL=...
-260  config/app.<ext>               app.db.url=...
-250  app.<ext> in the binary        (embedded with boot.WithFS)
-```
-
-Flags (`boot.WithFlags`, 400) rank above all of these, and a directory of
-files such as a mounted Secret (`source/dir`, 100) below. `<ext>` is `properties` or `json`; other formats plug in, such as YAML with
-`boot.WithFormat("yaml", yaml.Format)` from the module
-[`format/yaml`](format/yaml). For an active profile, `app-<profile>.<ext>`
-is read too, and a value such as `%prod.app.port` beats the plain value of
-the same ordinal. Values may refer to other keys:
-`app.db.url=postgres://${app.db.host:localhost}/app`.
-
-## Guides
+## Next steps
 
 - **[Profiles](docs/profiles.md)**: `%dev.` keys, `app-dev.properties`,
   activating profiles.
@@ -189,8 +229,9 @@ the same ordinal. Values may refer to other keys:
 
 The API reference is on [pkg.go.dev](https://pkg.go.dev/github.com/efuturetoday/gonf).
 
-## Examples
+More programs in [`examples/`](./examples):
 
+- [`examples/quickstart`](./examples/quickstart): the program of this page
 - [`examples/basic`](./examples/basic): Sources, profiles and expressions,
   set up by hand
 - [`examples/boot`](./examples/boot): loading by convention
@@ -198,6 +239,34 @@ The API reference is on [pkg.go.dev](https://pkg.go.dev/github.com/efuturetoday/
   brings its own configuration, and a `-config-doc` flag
 - [`examples/reload`](./examples/reload): a configuration that follows
   changes to its files
+
+## gonf, viper or koanf?
+
+All three load layered configuration. They differ in what they take care
+of for you.
+
+| | gonf | viper | koanf |
+| --- | --- | --- | --- |
+| Shape | typed structs, checked at start | keys read by name, `Unmarshal` into structs | you assemble providers and parsers |
+| State | no global state | a global instance by default | an instance you create |
+| Keys | case-sensitive | case-insensitive | case-sensitive |
+| Environment | matched against your structs | derived by `AutomaticEnv` and `BindEnv` | `env` provider with a transform callback |
+
+Choose **gonf** for services that want typed structs checked at start with
+all errors at once, the origin of every value (`cfg.Explain`), profiles,
+secrets, environment variables matched against the structs, and docs and
+a schema generated from the code. Choose **viper** for its large ecosystem
+and remote providers. Choose **koanf** if you want to assemble providers
+and parsers yourself with few opinions.
+
+Coming from viper or koanf:
+
+- A Mapping per struct (`gonf.NewMapping[Config]("app")`) replaces
+  `Unmarshal`. Unknown keys and missing values fail at start.
+- Environment names come from the keys (`app.db.url` is `APP_DB_URL`), so
+  there is nothing to bind or transform.
+- Values may refer to others and call functions: `${app.db.host}`,
+  `${env::HOME}`.
 
 ## Contributing
 

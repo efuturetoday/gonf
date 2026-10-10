@@ -72,14 +72,14 @@ func reader(path string, trim bool) source.ReadFunc {
 		if err != nil {
 			return nil, err
 		}
-		defer root.Close()
+		defer func() { _ = root.Close() }() // read only
 
 		d, err := root.Open(".")
 		if err != nil {
 			return nil, err
 		}
 		entries, err := d.ReadDir(-1)
-		d.Close()
+		_ = d.Close() // read only
 		if err != nil {
 			return nil, err
 		}
@@ -118,7 +118,7 @@ func readFile(root *os.Root, name string) (data []byte, ok bool, err error) {
 	if err != nil {
 		return nil, false, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read only
 	info, err := f.Stat()
 	if err != nil {
 		return nil, false, err

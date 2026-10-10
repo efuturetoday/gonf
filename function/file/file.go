@@ -37,7 +37,7 @@ func read(_ *gonf.Config, path string, _ gonf.Origin) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read only
 	data, err := io.ReadAll(io.LimitReader(f, MaxSize+1))
 	if err != nil {
 		return "", err // an *fs.PathError, which names the path

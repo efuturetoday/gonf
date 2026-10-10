@@ -19,10 +19,12 @@ cfg, err := boot.Load(ctx,
 )
 ```
 
-A test that must not depend on the machine it runs on leaves out the
-environment and `.env` with `boot.WithoutEnv()`; `boot.WithDir(dir)` reads
-`config/` and `.env` in another directory than the working directory, such
-as the root of the module from a test in a package below it.
+A test leaves out `.env`, which holds the settings of one developer's
+machine, with `boot.WithoutDotenv()`; the environment still applies, so
+whoever runs the tests decides, for example, which database they use.
+`boot.WithDir(dir)` reads `config/` and `.env` in another directory than
+the working directory, such as the root of the module from a test in a
+package below it.
 
 ## Without boot
 

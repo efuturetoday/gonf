@@ -11,8 +11,7 @@
 //
 // for every known extension ("properties" and "json", more with
 // WithFormat). All files are optional. WithDir reads another directory
-// instead of the working directory; WithoutEnv leaves out the environment
-// and .env. The active profiles come from the
+// instead of the working directory; WithoutDotenv leaves out .env. The active profiles come from the
 // key gonf.profile, e.g. GONF_PROFILE=dev,local; for each of them Load also
 // reads app-<profile>.<ext> next to every app.<ext>, with the same ordinal.
 // Files of inactive profiles are never read.
@@ -91,8 +90,8 @@ type options struct {
 	core      []gonf.Option
 	// dir is the directory of WithDir, "" for the working directory.
 	dir string
-	// isWithoutEnv is set by WithoutEnv.
-	isWithoutEnv bool
+	// isWithoutDotenv is set by WithoutDotenv.
+	isWithoutDotenv bool
 }
 
 type format struct {
@@ -160,12 +159,12 @@ func WithDir(dir string) Option {
 	return func(o *options) { o.dir = dir }
 }
 
-// WithoutEnv makes Load read neither the environment nor .env, e.g. in a
-// test that must not depend on the variables of the machine it runs on.
-// The profile key then comes from the files only. A value can still read
-// a variable on purpose with ${env::NAME}.
-func WithoutEnv() Option {
-	return func(o *options) { o.isWithoutEnv = true }
+// WithoutDotenv makes Load leave out .env, e.g. in a test: .env holds the
+// settings of one developer's machine, such as the address of their
+// database, which a test must not pick up unseen. The environment is
+// still read.
+func WithoutDotenv() Option {
+	return func(o *options) { o.isWithoutDotenv = true }
 }
 
 // With passes options to gonf.Load, after the ones of boot. Sources added
@@ -262,13 +261,11 @@ func build(workDir string, opts []Option) []gonf.Option {
 			srcs = append(srcs, loc.open(BaseName+"."+f.ext, f.format, source.Optional(), source.WithOrdinal(loc.ordinal)))
 		}
 	}
-	if !o.isWithoutEnv {
-		srcs = append(srcs,
-			onDisk(filepath.Join(workDir, DotenvFile), dotenv.Format,
-				source.Optional(), source.WithOrdinal(DotenvOrdinal), source.WithKeyMatcher(env.Match)),
-			env.New(),
-		)
+	if !o.isWithoutDotenv {
+		srcs = append(srcs, onDisk(filepath.Join(workDir, DotenvFile), dotenv.Format,
+			source.Optional(), source.WithOrdinal(DotenvOrdinal), source.WithKeyMatcher(env.Match)))
 	}
+	srcs = append(srcs, env.New())
 
 	core := []gonf.Option{
 		gonf.WithSources(srcs...),

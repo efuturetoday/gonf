@@ -398,15 +398,13 @@ func TestWithDir(t *testing.T) {
 	}
 }
 
-func TestWithoutEnv(t *testing.T) {
+func TestWithoutDotenv(t *testing.T) {
 	t.Setenv("BOOTTEST_ENV", "env")
-	t.Setenv("GONF_PROFILE", "boottest")
-	t.Setenv("BOOTTEST_HOME", "home")
 	dir := workDir(t, map[string]string{
 		".env":                  "BOOTTEST_DOTENV=dotenv\n",
-		"config/app.properties": "boottest.env=config\nboottest.url=${env::BOOTTEST_HOME}\n",
+		"config/app.properties": "boottest.env=config\nboottest.dotenv=config\n",
 	})
-	cfg, err := load(dir, WithoutEnv(), WithMappings(gonf.NewMapping[bootKeys]("boottest")))
+	cfg, err := load(dir, WithoutDotenv(), WithMappings(gonf.NewMapping[bootKeys]("boottest")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,9 +413,8 @@ func TestWithoutEnv(t *testing.T) {
 		key      string
 		expected string
 	}{
-		{name: "environment is not read", key: "boottest.env", expected: "config"},
-		{name: ".env is not read", key: "boottest.dotenv", expected: ""},
-		{name: "env function still reads", key: "boottest.url", expected: "home"},
+		{name: "environment is read", key: "boottest.env", expected: "env"},
+		{name: ".env is not read", key: "boottest.dotenv", expected: "config"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -425,9 +422,6 @@ func TestWithoutEnv(t *testing.T) {
 				t.Errorf("%s = %q, want %q", tt.key, got, tt.expected)
 			}
 		})
-	}
-	if got := cfg.Profiles(); len(got) != 0 {
-		t.Errorf("Profiles = %v, want none from the environment", got)
 	}
 }
 

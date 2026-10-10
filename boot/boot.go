@@ -15,13 +15,15 @@
 // reads app-<profile>.<ext> next to every app.<ext>, with the same ordinal.
 // Files of inactive profiles are never read.
 //
-// Values written as ${aes-gcm::...} are decrypted with secret/aesgcm. Its
-// key is gonf.secret.aes-gcm.key, e.g. GONF_SECRET_AES_GCM_KEY, from any
-// Source but the one with the encrypted value. The gonf encrypt command
-// encrypts values.
+// Values may call the Functions env, file, base64, base64-decode, uuid and
+// aes-gcm, as in ${env::HOME} or ${file::/run/secrets/db}. Values written
+// as ${aes-gcm::...} are decrypted with secret/aesgcm. Its key is
+// gonf.secret.aes-gcm.key, e.g. GONF_SECRET_AES_GCM_KEY, from any Source
+// but the one with the encrypted value. The gonf encrypt command encrypts
+// values.
 //
 // boot is extended from outside: WithFormat adds formats, WithFS a packaged
-// default configuration, WithSecretHandler secret handlers, and With
+// default configuration, WithFunctions Functions, and With
 // passes any gonf.Option through, e.g. more Sources or SourceFactories.
 //
 // Describe lists the keys Load reads, for a configuration reference.
@@ -38,12 +40,16 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/efuturetoday/gonf"
 	"github.com/efuturetoday/gonf/format/dotenv"
 	"github.com/efuturetoday/gonf/format/json"
 	"github.com/efuturetoday/gonf/format/properties"
+	"github.com/efuturetoday/gonf/function/base64"
+	secretfile "github.com/efuturetoday/gonf/function/file"
+	"github.com/efuturetoday/gonf/function/uuid"
 	"github.com/efuturetoday/gonf/schema"
 	"github.com/efuturetoday/gonf/secret/aesgcm"
 	"github.com/efuturetoday/gonf/source"
@@ -76,17 +82,16 @@ const (
 type Option func(*options)
 
 type options struct {
-	formats  []format
-	embedded fs.FS
-	trigger  func(path string) source.Trigger
-	handlers []handler
-	core     []gonf.Option
+	formats   []format
+	embedded  fs.FS
+	trigger   func(path string) source.Trigger
+	functions []function
+	core      []gonf.Option
 }
 
-type handler struct {
-	name    string
-	handler gonf.SecretHandler
-	// mapping holds the keys the handler reads, nil if none.
+type function struct {
+	fn gonf.Function
+	// mapping holds the keys the Function reads, nil if none.
 	mapping gonf.AnyMapping
 }
 
@@ -110,20 +115,24 @@ func WithFormat(ext string, f source.Format) Option {
 	}
 }
 
-// WithSecretHandler makes Load decrypt ${name::value} expressions with h,
-// see gonf.WithSecretHandler. A known name is replaced, e.g. to
+// WithFunctions makes Load resolve ${name::arg} expressions with fns, see
+// gonf.WithFunctions. A Function with a known name replaces it, e.g. to
 // pass the aes-gcm key in code:
 //
-//	boot.WithSecretHandler(aesgcm.Name, aesgcm.WithKey(key))
-func WithSecretHandler(name string, h gonf.SecretHandler) Option {
+//	boot.WithFunctions(aesgcm.WithKey(key))
+//
+// Replacing aes-gcm also drops aesgcm.Mapping, which only the default
+// Function reads.
+func WithFunctions(fns ...gonf.Function) Option {
 	return func(o *options) {
-		for i := range o.handlers {
-			if o.handlers[i].name == name {
-				o.handlers[i] = handler{name: name, handler: h}
-				return
+		for _, fn := range fns {
+			i := slices.IndexFunc(o.functions, func(f function) bool { return f.fn.Name == fn.Name })
+			if i < 0 {
+				o.functions = append(o.functions, function{fn: fn})
+				continue
 			}
+			o.functions[i] = function{fn: fn}
 		}
-		o.handlers = append(o.handlers, handler{name: name, handler: h})
 	}
 }
 
@@ -195,8 +204,13 @@ func build(workDir string, opts []Option) []gonf.Option {
 	o := options{formats: []format{
 		{ext: "properties", format: properties.Format},
 		{ext: "json", format: json.Format},
-	}, handlers: []handler{
-		{name: aesgcm.Name, handler: aesgcm.Handler, mapping: aesgcm.Mapping},
+	}, functions: []function{
+		{fn: env.Function()},
+		{fn: secretfile.Function()},
+		{fn: base64.Encode()},
+		{fn: base64.Decode()},
+		{fn: uuid.Function()},
+		{fn: aesgcm.Function(), mapping: aesgcm.Mapping},
 	}}
 	for _, opt := range opts {
 		opt(&o)
@@ -242,10 +256,10 @@ func build(workDir string, opts []Option) []gonf.Option {
 		gonf.WithProfileKey(ProfileKey),
 		gonf.WithFactories(profileFiles(locations, o.formats)),
 	}
-	for _, h := range o.handlers {
-		core = append(core, gonf.WithSecretHandler(h.name, h.handler))
-		if h.mapping != nil {
-			core = append(core, gonf.WithMappings(h.mapping))
+	for _, f := range o.functions {
+		core = append(core, gonf.WithFunctions(f.fn))
+		if f.mapping != nil {
+			core = append(core, gonf.WithMappings(f.mapping))
 		}
 	}
 	return append(core, o.core...)

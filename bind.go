@@ -158,21 +158,21 @@ type boundValue struct {
 }
 
 // reference is a key that the value of another key refers to with ${...},
-// or a SecretHandler that decrypts a part of it.
+// or a secret Function that computes a part of it.
 type reference struct {
 	from, to string
-	handler  string
+	function string
 }
 
 // hooks returns the hooks that expand the value of key and record what it
 // uses.
 func (b *binder) hooks(key string) hooks {
 	return hooks{
-		call: func(c *Config, current, name, arg string, origin Origin) (string, error) {
-			if _, ok := c.handlers[name]; ok {
-				b.references = append(b.references, reference{from: key, handler: name})
+		call: func(c *Config, s callSite) (string, bool, error) {
+			if fn, ok := c.functions.lookup(s.name); ok && fn.IsSecret {
+				b.references = append(b.references, reference{from: key, function: s.name})
 			}
-			return decrypt(c, current, name, arg, origin)
+			return invoke(c, s)
 		},
 		reference: func(to string) (string, bool) {
 			b.referenced[to] = struct{}{}
@@ -191,15 +191,15 @@ func (b *binder) checkSecretReferences() {
 	for _, r := range b.references {
 		_, isSecretField := b.secrets[r.from]
 		_, isSecretTarget := b.secrets[r.to]
-		isSecretTarget = isSecretTarget || r.handler != "" || b.c.isSecret(r.to)
+		isSecretTarget = isSecretTarget || r.function != "" || b.c.isSecret(r.to)
 		if isSecretField || !isSecretTarget || reported[r.from] {
 			continue
 		}
 		reported[r.from] = true
 		v, _ := b.c.Lookup(r.from)
 		err := fmt.Errorf("refers to the secret %s, make the field a gonf.Secret", r.to)
-		if r.handler != "" {
-			err = fmt.Errorf("is decrypted with %s, make the field a gonf.Secret", r.handler)
+		if r.function != "" {
+			err = fmt.Errorf("comes from the secret function %s, make the field a gonf.Secret", r.function)
 		}
 		b.fail(r.from, v.Origin, err)
 	}

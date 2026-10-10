@@ -54,7 +54,7 @@ func TestRun_Encrypt(t *testing.T) {
 			// The output is a line to paste into a configuration file.
 			line := strings.TrimSuffix(stdout.String(), "\n")
 			cfg, err := gonf.Load(context.Background(),
-				gonf.WithSecretHandler(aesgcm.Name, aesgcm.WithKey(tt.key)),
+				gonf.WithFunctions(aesgcm.WithKey(tt.key)),
 				gonf.WithSources(memory.New(map[string]string{"v": line})),
 			)
 			if err != nil {

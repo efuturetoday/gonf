@@ -224,14 +224,18 @@ func TestWithFormat(t *testing.T) {
 	}
 }
 
-func TestWithSecretHandler(t *testing.T) {
+func TestWithFunctions(t *testing.T) {
 	t.Parallel()
 	encrypted, err := aesgcm.Encrypt("k3y", "s3cret")
 	if err != nil {
 		t.Fatal(err)
 	}
-	upper := func(_ *gonf.Config, value string, _ gonf.Origin) (string, error) {
+	upper := gonf.Function{Name: "upper", Call: func(_ *gonf.Config, value string, _ gonf.Origin) (string, error) {
 		return strings.ToUpper(value), nil
+	}}
+	secretFile := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(secretFile, []byte("from-file"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	tests := []struct {
 		name     string
@@ -239,6 +243,8 @@ func TestWithSecretHandler(t *testing.T) {
 		opts     []Option
 		key      string
 		expected string
+		// sameAs is a key with the same value, instead of expected.
+		sameAs string
 	}{
 		{
 			name: "aes-gcm by default, key from .env",
@@ -252,16 +258,40 @@ func TestWithSecretHandler(t *testing.T) {
 		{
 			name:     "aes-gcm replaced",
 			files:    map[string]string{"config/app.properties": "boottest.password=${aes-gcm::" + encrypted + "}\n"},
-			opts:     []Option{WithSecretHandler(aesgcm.Name, aesgcm.WithKey("k3y"))},
+			opts:     []Option{WithFunctions(aesgcm.WithKey("k3y"))},
 			key:      "boottest.password",
 			expected: "s3cret",
 		},
 		{
-			name:     "handler added",
+			name:     "function added",
 			files:    map[string]string{"config/app.properties": "boottest.token=${upper::abc}\n"},
-			opts:     []Option{WithSecretHandler("upper", upper)},
+			opts:     []Option{WithFunctions(upper)},
 			key:      "boottest.token",
 			expected: "ABC",
+		},
+		{
+			name:     "env by default",
+			files:    map[string]string{"config/app.properties": "boottest.home=${env::HOME}/logs\n"},
+			key:      "boottest.home",
+			expected: os.Getenv("HOME") + "/logs",
+		},
+		{
+			name:     "file and base64 by default",
+			files:    map[string]string{"config/app.properties": "boottest.b64=${base64::${file::" + secretFile + "}}\n"},
+			key:      "boottest.b64",
+			expected: "ZnJvbS1maWxl",
+		},
+		{
+			name:     "base64-decode by default",
+			files:    map[string]string{"config/app.properties": "boottest.text=${base64-decode::YQ==}\n"},
+			key:      "boottest.text",
+			expected: "a",
+		},
+		{
+			name:   "uuid by default, the same within one Config",
+			files:  map[string]string{"config/app.properties": "boottest.id=${uuid::}\nboottest.same=${uuid::}\n"},
+			key:    "boottest.id",
+			sameAs: "boottest.same",
 		},
 	}
 	for _, tt := range tests {
@@ -271,8 +301,14 @@ func TestWithSecretHandler(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got, err := cfg.Get(tt.key); err != nil || got != tt.expected {
-				t.Errorf("Get(%q) = %q, %v; want %q", tt.key, got, err, tt.expected)
+			expected := tt.expected
+			if tt.sameAs != "" {
+				if expected, err = cfg.Get(tt.sameAs); err != nil || expected == "" {
+					t.Fatalf("Get(%q) = %q, %v", tt.sameAs, expected, err)
+				}
+			}
+			if got, err := cfg.Get(tt.key); err != nil || got != expected {
+				t.Errorf("Get(%q) = %q, %v; want %q", tt.key, got, err, expected)
 			}
 		})
 	}
@@ -318,7 +354,7 @@ func TestDescribe(t *testing.T) {
 	if len(props) != 2 || props[0].Key != aesgcm.Key || props[0].Env != "GONF_SECRET_AES_GCM_KEY" || !props[0].Secret {
 		t.Fatalf("Describe = %+v, want the aes-gcm key and boottest.db.url", props)
 	}
-	expected := gonf.Property{Key: "boottest.db.url", Env: "BOOTTEST_DB_URL", Type: "string", Required: true, Doc: "Address.", Mapping: "boottest.db", Location: "boot_test.go:313"}
+	expected := gonf.Property{Key: "boottest.db.url", Env: "BOOTTEST_DB_URL", Type: "string", Required: true, Doc: "Address.", Mapping: "boottest.db", Location: "boot_test.go:349"}
 	if !reflect.DeepEqual(props[1], expected) {
 		t.Errorf("Describe = %+v, want %+v", props[1], expected)
 	}

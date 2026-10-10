@@ -17,10 +17,10 @@ type Config struct {
 	profiles []string
 	keys     []string
 	// validator is set with WithValidator, converters with WithConverter,
-	// handlers with WithSecretHandler.
+	// functions with WithFunctions.
 	validator  func(v any) error
 	converters converters
-	handlers   map[string]SecretHandler
+	functions  *functions
 	// mappings holds the bound value of every Mapping given with
 	// WithMappings.
 	mappings map[AnyMapping]boundMapping

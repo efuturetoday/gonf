@@ -103,14 +103,14 @@ Keep the key out of the repository. If the application gets the key
 elsewhere, pass it in code:
 
 ```go
-cfg, err := boot.Load(ctx, boot.WithSecretHandler(aesgcm.Name, aesgcm.WithKey(key)))
+cfg, err := boot.Load(ctx, boot.WithFunctions(aesgcm.WithKey(key)))
 ```
 
-Without boot, register the handler with Load:
+Without boot, register the Function with Load:
 
 ```go
 cfg, err := gonf.Load(ctx,
-	gonf.WithSecretHandler(aesgcm.Name, aesgcm.Handler),
+	gonf.WithFunctions(aesgcm.Function()),
 	...
 )
 ```
@@ -119,7 +119,7 @@ A decrypted value is a secret: `Explain` shows `****`, and a field for it
 must be a `gonf.Secret`, also when it refers to it with `${...}`:
 
 ```
-gonf: bind "db": db.password: is decrypted with aes-gcm, make the field a gonf.Secret (from file:config/app.properties:3)
+gonf: bind "db": db.password: comes from the secret function aes-gcm, make the field a gonf.Secret (from file:config/app.properties:3)
 ```
 
 A wrong or missing key or a damaged value stops the start without showing
@@ -130,6 +130,8 @@ gonf: bind "db": db.password: aes-gcm: wrong key or damaged value (from file:con
 gonf: bind "db": db.password: aes-gcm: the key gonf.secret.aes-gcm.key has no value (from file:config/app.properties:3)
 ```
 
-Other ways to decrypt, such as a cloud key service, plug in the same way
-with `boot.WithSecretHandler(name, handler)` (or
-`gonf.WithSecretHandler`) and `${name::value}`.
+Other ways to decrypt, such as a cloud key service, plug in the same way:
+a `gonf.Function` with `IsSecret: true`, passed to `boot.WithFunctions` (or
+`gonf.WithFunctions`) and called as `${name::value}`. boot also provides
+the Functions `env`, `file` (secret), `base64`, `base64-decode` and `uuid`,
+as in `${file::/run/secrets/db-password}`.

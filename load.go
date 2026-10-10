@@ -25,7 +25,7 @@ type loadOptions struct {
 	converters []converter
 	onReload   func(cfg *Config, err error)
 	logger     *slog.Logger
-	handlers   []namedHandler
+	functions  []Function
 }
 
 // WithSources adds Sources. Can be passed multiple times; the order of
@@ -113,7 +113,7 @@ func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	handlers, err := newHandlers(o.handlers)
+	fns, err := newFunctions(o.functions)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -127,12 +127,12 @@ func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
 		return nil, nil, err
 	}
 	if len(profiles) == 0 && o.profileKey != "" {
-		if profiles, err = profilesFromKey(loaded, o.profileKey); err != nil {
+		if profiles, err = profilesFromKey(loaded, o.profileKey, fns); err != nil {
 			return nil, nil, err
 		}
 	}
 	cfg := newConfig(loaded, profiles)
-	cfg.validator, cfg.converters, cfg.handlers = o.validator, cs, handlers
+	cfg.validator, cfg.converters, cfg.functions = o.validator, cs, fns
 	var created []Source
 	if len(o.factories) > 0 {
 		var late []loadedSource
@@ -141,7 +141,7 @@ func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
 			return nil, created, err
 		}
 		cfg = newConfig(append(loaded, late...), profiles)
-		cfg.validator, cfg.converters, cfg.handlers = o.validator, cs, handlers
+		cfg.validator, cfg.converters, cfg.functions = o.validator, cs, fns
 	}
 	if err := cfg.bindMappings(o.mappings); err != nil {
 		return nil, created, err
@@ -290,8 +290,10 @@ func newLoadedSource(src Source, values map[string]Value) (loadedSource, error) 
 }
 
 // profilesFromKey reads the active profiles from key.
-func profilesFromKey(loaded []loadedSource, key string) ([]string, error) {
-	value, err := newConfig(loaded, nil).Get(key)
+func profilesFromKey(loaded []loadedSource, key string, fns *functions) ([]string, error) {
+	cfg := newConfig(loaded, nil)
+	cfg.functions = fns
+	value, err := cfg.Get(key)
 	if errors.Is(err, ErrNotFound) {
 		return nil, nil
 	}

@@ -3,8 +3,9 @@
 //
 //	db.password=${aes-gcm::DBJ2...}
 //
-// Register Handler under Name with gonf.WithSecretHandler; boot does that
-// on its own. Encrypt creates such values.
+// Register Function, and Mapping for its key, with gonf.WithFunctions and
+// gonf.WithMappings; boot does that on its own. Encrypt creates such
+// values.
 //
 // value is URL-safe base64, with or without padding, of one byte holding
 // the nonce length, the nonce, and the ciphertext with its 16-byte tag. The
@@ -25,21 +26,21 @@ import (
 )
 
 const (
-	// Name is the name of the handler in ${aes-gcm::value}.
+	// Name is the name of the Function in ${aes-gcm::value}.
 	Name = "aes-gcm"
-	// Key is the configuration key that holds the key for Handler, found
+	// Key is the configuration key that holds the key for Function, found
 	// in the environment as GONF_SECRET_AES_GCM_KEY.
 	Key = "gonf.secret.aes-gcm.key"
 )
 
-// KeyConfig holds the key for Handler.
+// KeyConfig holds the key for Function.
 type KeyConfig struct {
 	Key *gonf.Secret[string] `desc:"Key for ${aes-gcm::...} values."`
 }
 
-// Mapping binds KeyConfig to the prefix of Key. Registered with Handler,
+// Mapping binds KeyConfig to the prefix of Key. Registered with Function,
 // it makes Key a known key, so the environment provides it as
-// GONF_SECRET_AES_GCM_KEY. boot registers it with its default handler.
+// GONF_SECRET_AES_GCM_KEY. boot registers it with its default Functions.
 var Mapping = gonf.NewMapping[KeyConfig](strings.TrimSuffix(Key, ".key"))
 
 // nonceSize is the nonce length Encrypt uses, the standard one of GCM.
@@ -47,12 +48,21 @@ const nonceSize = 12
 
 var errDecrypt = errors.New("wrong key or damaged value")
 
-// Handler is a gonf.SecretHandler that decrypts with the key the
-// configuration holds under Key. Register Mapping with it so that the
-// environment can provide the key. Any Source may provide the key, except
-// the Source of the encrypted value: a key next to the values it protects
-// protects nothing. The key is used as written; it must not contain ${...}.
-func Handler(cfg *gonf.Config, value string, origin gonf.Origin) (string, error) {
+// Function returns the secret gonf.Function Name that decrypts with the
+// key the configuration holds under Key. Register Mapping with it so that
+// the environment can provide the key. Any Source may provide the key,
+// except the Source of the encrypted value: a key next to the values it
+// protects protects nothing. The key is used as written; it must not
+// contain ${...}.
+//
+// gonf caches results by value, not by Source: a value decrypted once is
+// not checked again where it appears in the Source of the key.
+func Function() gonf.Function {
+	return gonf.Function{Name: Name, IsSecret: true, Call: decryptWithConfig}
+}
+
+// decryptWithConfig decrypts value with the key under Key.
+func decryptWithConfig(cfg *gonf.Config, value string, origin gonf.Origin) (string, error) {
 	key, ok := cfg.Lookup(Key)
 	switch {
 	case !ok || key.Raw == "":
@@ -65,12 +75,12 @@ func Handler(cfg *gonf.Config, value string, origin gonf.Origin) (string, error)
 	return decrypt(key.Raw, value)
 }
 
-// WithKey returns a gonf.SecretHandler that decrypts with key, for
-// applications that get the key elsewhere.
-func WithKey(key string) gonf.SecretHandler {
-	return func(_ *gonf.Config, value string, _ gonf.Origin) (string, error) {
+// WithKey returns the secret gonf.Function Name that decrypts with key,
+// for applications that get the key elsewhere.
+func WithKey(key string) gonf.Function {
+	return gonf.Function{Name: Name, IsSecret: true, Call: func(_ *gonf.Config, value string, _ gonf.Origin) (string, error) {
 		return decrypt(key, value)
-	}
+	}}
 }
 
 // Encrypt encrypts plaintext with key and returns the value for a

@@ -27,8 +27,15 @@ type Explanation struct {
 	IsDefault bool
 	// IsSecret reports whether the values are masked: the Property is
 	// Secret, the name of the key contains "password", "secret", "token"
-	// or "credential" in any case, or a value is encrypted.
+	// or "credential" in any case, or a value calls a secret Function.
 	IsSecret bool
+	// Functions names the Functions that computed Value, also through
+	// references, in the order they were called: inner ones first, as in
+	// [file base64] for ${base64::${file::/run/secrets/key}}. Explain
+	// calls Functions that are no secret, with the results cached as for
+	// Get; a secret Function, or one with a secret argument, is not called
+	// and gives "****".
+	Functions []string
 	// Candidates holds every value for the key, as Candidates does, with
 	// Raw replaced by "****" if IsSecret.
 	Candidates []Value
@@ -50,7 +57,7 @@ func (c *Config) Explain(key string) Explanation {
 	if v, ok := c.values[key]; ok && v.def != nil {
 		def = &Value{Raw: *v.def, Origin: v.origin}
 	}
-	e.Value, e.Origin, e.Err = c.effective(key, e.Candidates, def)
+	e.Value, e.Origin, e.Functions, e.Err = c.effective(key, e.Candidates, def)
 	e.IsDefault = e.Err == nil && def != nil && e.Origin == def.Origin
 	if e.IsSecret {
 		e.Value = masked
@@ -86,26 +93,28 @@ func (c *Config) Properties() []Property {
 	return slices.Clone(c.properties)
 }
 
-// effective returns the value a Mapping binds for key and where it comes
-// from, expanding references to secret keys to "****".
-func (c *Config) effective(key string, candidates []Value, def *Value) (string, Origin, error) {
+// effective returns the value a Mapping binds for key, where it comes from
+// and the Functions that computed it, expanding references to secret keys
+// to "****".
+func (c *Config) effective(key string, candidates []Value, def *Value) (string, Origin, []string, error) {
 	if len(candidates) > 0 {
-		s, err := c.expandMasked(key, candidates[0].Raw)
+		winner := candidates[0]
+		s, fns, err := c.expandMasked(key, winner.Raw, winner.Origin)
 		if err != nil {
-			return "", candidates[0].Origin, fmt.Errorf("gonf: key %q: %w", key, err)
+			return "", winner.Origin, nil, fmt.Errorf("gonf: key %q: %w", key, err)
 		}
 		if s != "" || def == nil {
-			return s, candidates[0].Origin, nil
+			return s, winner.Origin, fns, nil
 		}
 	}
 	if def == nil {
-		return "", Origin{}, fmt.Errorf("%w: %q", ErrNotFound, key)
+		return "", Origin{}, nil, fmt.Errorf("%w: %q", ErrNotFound, key)
 	}
-	s, err := c.expandMasked(key, def.Raw)
+	s, fns, err := c.expandMasked(key, def.Raw, def.Origin)
 	if err != nil {
-		return "", def.Origin, fmt.Errorf("gonf: key %q: default: %w", key, err)
+		return "", def.Origin, nil, fmt.Errorf("gonf: key %q: default: %w", key, err)
 	}
-	return s, def.Origin, nil
+	return s, def.Origin, fns, nil
 }
 
 // Explanations explains every key of the Sources and every key a Mapping
@@ -143,9 +152,9 @@ func (e Explanation) String() string {
 	switch {
 	case e.Err != nil:
 	case e.IsDefault:
-		fmt.Fprintf(&b, "%s = %s (default, %s)", e.Key, show(e.Value), where(e.Origin))
+		fmt.Fprintf(&b, "%s = %s (default, %s%s)", e.Key, show(e.Value), where(e.Origin), via(e.Functions))
 	default:
-		fmt.Fprintf(&b, "%s = %s (%s)", e.Key, show(e.Value), where(e.Origin))
+		fmt.Fprintf(&b, "%s = %s (%s%s)", e.Key, show(e.Value), where(e.Origin), via(e.Functions))
 	}
 	for i, v := range e.Candidates {
 		label := "overrides"
@@ -166,6 +175,14 @@ func (e Explanation) String() string {
 	return b.String()
 }
 
+// via names the Functions that computed a value, if any.
+func via(fns []string) string {
+	if len(fns) == 0 {
+		return ""
+	}
+	return ", via " + strings.Join(fns, ", ")
+}
+
 // show prints an empty value as "".
 func show(s string) string { return cmp.Or(s, `""`) }
 
@@ -179,24 +196,33 @@ func where(o Origin) string {
 }
 
 // isSecret reports whether the value of key must be masked: by its
-// Property, its name, or an encrypted value.
+// Property, its name, or a call of a secret Function.
 func (c *Config) isSecret(key string) bool {
 	if p := c.propertyOf(key); p != nil && p.Secret {
 		return true
 	}
-	return isSecretName(key) || c.isEncrypted(key)
+	return isSecretName(key) || c.callsSecret(key)
 }
 
-// expandMasked expands s like Get, but references to secret keys expand to
-// "****", and nothing is decrypted.
-func (c *Config) expandMasked(key, s string) (string, error) {
-	return c.expand(key, s, Origin{}, hooks{
-		// A key with an encrypted value is secret and masked before its
-		// value is expanded; this keeps any other expression from
-		// decrypting.
-		call: func(*Config, string, string, string, Origin) (string, error) { return masked, nil },
+// expandMasked expands s, a value of key from origin, like Get, but
+// references to secret keys expand to "****", and so do secret Functions
+// and Functions with a secret argument, which are not called. It returns
+// the names of the Functions in the order they were called.
+func (c *Config) expandMasked(key, s string, origin Origin) (string, []string, error) {
+	var names []string
+	v, err := c.expand(key, s, origin, hooks{
+		call: func(c *Config, s callSite) (string, bool, error) {
+			if !slices.Contains(names, s.name) {
+				names = append(names, s.name)
+			}
+			if fn, ok := c.functions.lookup(s.name); ok && (fn.IsSecret || s.isSecretArg) {
+				return masked, true, nil
+			}
+			return invoke(c, s)
+		},
 		reference: func(key string) (string, bool) {
 			return masked, c.isSecret(key)
 		},
 	})
+	return v, names, err
 }

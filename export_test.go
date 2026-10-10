@@ -32,7 +32,7 @@ func BindMapping[T any](c *Config, m *Mapping[T]) (T, error) {
 		}
 	}
 	cp := newConfig(loaded, c.profiles)
-	cp.validator, cp.converters, cp.handlers = c.validator, c.converters, c.handlers
+	cp.validator, cp.converters, cp.functions = c.validator, c.converters, c.functions
 	if err := cp.bindMappings([]AnyMapping{m}); err != nil {
 		return zero, err
 	}

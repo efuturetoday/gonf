@@ -16,7 +16,7 @@ import (
 func decrypt(t *testing.T, key, value string) (string, error) {
 	t.Helper()
 	cfg, err := gonf.Load(context.Background(),
-		gonf.WithSecretHandler(aesgcm.Name, aesgcm.WithKey(key)),
+		gonf.WithFunctions(aesgcm.WithKey(key)),
 		gonf.WithSources(memory.New(map[string]string{"v": "${aes-gcm::" + value + "}"})),
 	)
 	if err != nil {
@@ -127,7 +127,7 @@ func TestHandler(t *testing.T) {
 			t.Parallel()
 			mapping := gonf.NewMapping[db]("db", gonf.AllowUnknown())
 			cfg, err := gonf.Load(context.Background(),
-				gonf.WithSecretHandler(aesgcm.Name, aesgcm.Handler),
+				gonf.WithFunctions(aesgcm.Function()),
 				gonf.WithMappings(mapping),
 				gonf.WithSources(
 					memory.New(tt.file, source.WithName("file:app.properties"), source.WithOrdinal(100)),

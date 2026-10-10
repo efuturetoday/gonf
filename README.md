@@ -85,6 +85,8 @@ func main() {
 The complete program is in [`examples/quickstart`](./examples/quickstart).
 Run it from that directory:
 
+![Terminal: go run prints the port, the database URL and the masked password](docs/tapes/quickstart.gif)
+
 ```text
 $ go run .
 port:     8000
@@ -119,6 +121,8 @@ app.db.ulr=postgres://${app.db.host}:5432/app
 ```
 
 The program stops at start and reports every problem, not only the first:
+
+![Terminal: the program stops at start and lists both problems, with a did-you-mean suggestion](docs/tapes/error.gif)
 
 ```text
 $ go run .

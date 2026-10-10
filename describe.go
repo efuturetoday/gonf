@@ -37,6 +37,9 @@ type Property struct {
 	// file and line of its NewMapping.
 	Mapping  string `json:"mapping"`
 	Location string `json:"location,omitempty"`
+	// IsUnknownAllowed reports whether the Mapping was made with
+	// AllowUnknown, so keys next to this one are not an error.
+	IsUnknownAllowed bool `json:"unknownAllowed,omitempty"`
 }
 
 // Describe returns the Properties of the Mappings given with WithMappings,
@@ -143,6 +146,11 @@ func propertyOf(key string, f field, m AnyMapping) Property {
 	if isSecret(t) {
 		p.Type = secretElem(t).String()
 	}
+	var o bindOptions
+	for _, opt := range m.options() {
+		opt(&o)
+	}
+	p.IsUnknownAllowed = o.isUnknownAllowed
 	p.Secret = f.m.isSecret || isSecretName(key)
 	if f.def != nil {
 		def := *f.def

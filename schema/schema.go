@@ -10,9 +10,9 @@
 // exists, but a missing object is not reported, since the value may come from
 // the environment.
 //
-// Objects below the prefix of a Mapping reject unknown keys, like Load does;
-// the root stays open for other prefixes. A Mapping created with
-// gonf.AllowUnknown is not known to the schema and is closed all the same.
+// Objects below the prefix of a Mapping reject unknown keys, like Load does,
+// unless the Mapping was made with gonf.AllowUnknown; the root stays open
+// for other prefixes.
 // Profile sections ("%dev": {...}) are allowed at the root with the same
 // properties and without required keys; the flat form "%dev.db.url" is
 // accepted without checking its value.
@@ -141,7 +141,7 @@ func (n *node) insert(p gonf.Property) error {
 		if cur.leaf != nil {
 			return fmt.Errorf("schema: %s: a shorter key is a single value and holds keys", p.Key)
 		}
-		if i >= known {
+		if i >= known && !p.IsUnknownAllowed {
 			cur.closed = true
 		}
 		var next **node

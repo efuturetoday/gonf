@@ -262,3 +262,31 @@ func TestNew_Conflict(t *testing.T) {
 		t.Error("an object that is a single value must be an error")
 	}
 }
+
+func TestNew_AllowUnknownStaysOpen(t *testing.T) {
+	t.Parallel()
+	type cfg struct {
+		Name string `default:"x"`
+		Pool struct {
+			Size int `default:"1"`
+		}
+	}
+	props, err := gonf.Describe(gonf.WithMappings(
+		gonf.NewMapping[cfg]("open", gonf.AllowUnknown()),
+		gonf.NewMapping[cfg]("shut"),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := decode(t, props)
+	for _, path := range [][]string{{"open"}, {"open", "pool"}} {
+		if _, ok := at(t, doc, path...)["additionalProperties"]; ok {
+			t.Errorf("%v must stay open", path)
+		}
+	}
+	for _, path := range [][]string{{"shut"}, {"shut", "pool"}} {
+		if got := at(t, doc, path...)["additionalProperties"]; got != false {
+			t.Errorf("%v additionalProperties = %v, want false", path, got)
+		}
+	}
+}

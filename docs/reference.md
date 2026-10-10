@@ -122,8 +122,8 @@ What the schema says:
   string also accepts a `${...}` expression. A type with its own text
   format is not checked beyond the kind of the value.
 - Objects below the prefix of a Mapping reject unknown keys, like `Load`.
-  The root stays open for other prefixes. A Mapping with `AllowUnknown` is
-  closed in the schema all the same.
+  The root stays open for other prefixes. Objects of a Mapping with
+  `AllowUnknown` stay open.
 - `required` lists the keys `Load` requires inside an object that exists.
   A missing object is not reported, since its values may come from the
   environment.

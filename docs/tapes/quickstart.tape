@@ -14,12 +14,14 @@ Env BAT_THEME "Dracula"
 Env PS1 "$ "
 
 Hide
+Type "alias cat='bat --style=plain --paging=never'"
+Enter
 Type "cd examples/quickstart && go build -o /dev/null . && clear"
 Enter
 Sleep 8s
 Show
 
-Type "bat --style=plain --paging=never config/app.properties"
+Type "cat config/app.properties"
 Enter
 Sleep 1.5s
 

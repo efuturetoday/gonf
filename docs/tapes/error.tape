@@ -16,6 +16,8 @@ Env BAT_THEME "Dracula"
 Env PS1 "$ "
 
 Hide
+Type "alias cat='bat --style=plain --paging=never'"
+Enter
 Type "mkdir -p /tmp/gonf-err/config && go build -o /tmp/gonf-err/app ./examples/quickstart && cd /tmp/gonf-err"
 Enter
 Type "printf 'app.port=8000\napp.db.host=db.internal\napp.db.ulr=postgres://${app.db.host}:5432/app\n' > config/app.properties && clear"
@@ -23,7 +25,7 @@ Enter
 Sleep 8s
 Show
 
-Type "bat --style=plain --paging=never config/app.properties"
+Type "cat config/app.properties"
 Enter
 Sleep 1.5s
 

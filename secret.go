@@ -51,6 +51,9 @@ func (s Secret[T]) LogValue() slog.Value { return slog.StringValue(masked) }
 
 func (s Secret[T]) secretType() reflect.Type { return reflect.TypeFor[T]() }
 
+// secretValue returns the value, for Encode.
+func (s Secret[T]) secretValue() reflect.Value { return reflect.ValueOf(&s.value).Elem() }
+
 func (s *Secret[T]) setSecret(v reflect.Value) {
 	if x, ok := reflect.TypeAssert[T](v); ok {
 		s.value = x

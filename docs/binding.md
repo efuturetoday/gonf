@@ -189,3 +189,19 @@ A field type that gonf cannot read, such as a `func` field or a default on a
 struct, is reported before any value is read. The error is a
 `*gonf.BindError` whose `Problems` list the keys; `errors.Is(err,
 gonf.ErrNotFound)` reports a missing value.
+
+## Encoding
+
+`gonf.Encode` is the inverse of binding: it turns a struct into the keys
+and values a Mapping of its type at a prefix binds, such as to hand a
+configuration to another process.
+
+```go
+values, err := gonf.Encode("db", Conn{URL: "postgres://db/app", Password: gonf.NewSecret("s3cret")})
+// map[db.password:s3cret db.url:postgres://db/app]
+```
+
+A `Secret` gives its value. Lists become indexed keys, maps one key per
+entry. An empty value, list or map gives no key, as `Load` reads an empty
+value as none. Values that come from elsewhere may contain `${`; wrap each
+in `gonf.Escape` before a Source holds it, so that it is not expanded.

@@ -201,7 +201,7 @@ func (c *Config) isSecret(key string) bool {
 	if p := c.propertyOf(key); p != nil && p.Secret {
 		return true
 	}
-	return isSecretName(key) || c.callsSecret(key)
+	return isSecretName(key, c.secretWords) || c.callsSecret(key)
 }
 
 // expandMasked expands s, a value of key from origin, like Get, but

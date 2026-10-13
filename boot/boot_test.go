@@ -452,18 +452,17 @@ func TestWatch(t *testing.T) {
 		reloads := make(chan *gonf.Config, 10)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		live, err := gonf.Watch(ctx, build(dir, []Option{
+		live, err := Watch(ctx,
+			WithDir(dir),
 			WithFS(embedded),
 			WithFileTrigger(trigger),
-			With(
-				gonf.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
-				gonf.OnReload(func(cfg *gonf.Config, err error) {
-					if err == nil {
-						reloads <- cfg
-					}
-				}),
-			),
-		})...)
+			WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+			OnReload(func(cfg *gonf.Config, err error) {
+				if err == nil {
+					reloads <- cfg
+				}
+			}),
+		)
 		if err != nil {
 			t.Fatal(err)
 		}

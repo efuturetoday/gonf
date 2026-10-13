@@ -36,3 +36,15 @@ func TestNewMeta(t *testing.T) {
 		})
 	}
 }
+
+func TestSetting(t *testing.T) {
+	t.Parallel()
+	a, b := source.NewSetting[int](), source.NewSetting[int]()
+	m := source.NewMeta("p", 0, a.Set(3))
+	if v, ok := a.Get(m); !ok || v != 3 {
+		t.Errorf("a = %d, %v, want 3, true", v, ok)
+	}
+	if v, ok := b.Get(m); ok {
+		t.Errorf("b = %d, true, want unset", v)
+	}
+}

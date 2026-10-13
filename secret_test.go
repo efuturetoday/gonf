@@ -173,3 +173,29 @@ func TestBind_SecretErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestWithSecretWords(t *testing.T) {
+	t.Parallel()
+	values := map[string]string{"db.passphrase": "hunter2", "db.host": "h"}
+	tests := []struct {
+		name     string
+		opts     []gonf.Option
+		expected bool
+	}{
+		{name: "not secret by default"},
+		{name: "added word", opts: []gonf.Option{gonf.WithSecretWords(" PassPhrase ", "")}, expected: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := load(t, values, nil, tt.opts...)
+			e := cfg.Explain("db.passphrase")
+			if e.IsSecret != tt.expected || (e.Value == "hunter2") == tt.expected {
+				t.Errorf("IsSecret = %v, Value = %q, want IsSecret %v", e.IsSecret, e.Value, tt.expected)
+			}
+			if cfg.Explain("db.host").IsSecret {
+				t.Error("db.host is secret")
+			}
+		})
+	}
+}

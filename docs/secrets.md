@@ -35,7 +35,8 @@ with `****`. A key is secret if
 
 - a Mapping binds it to a `Secret`, or
 - its name contains `password`, `secret`, `token` or `credential`, in any
-  case, such as `api-token` or `AWS_SECRET_ACCESS_KEY`.
+  case, such as `api-token` or `AWS_SECRET_ACCESS_KEY`. Add more words
+  with `gonf.WithSecretWords("passphrase")`.
 - one of its values is encrypted, see below.
 
 A value that refers to a secret key is masked in that part only:

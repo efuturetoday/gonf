@@ -140,11 +140,11 @@ type portConfig struct {
 
 // startWatch runs gonf.Watch until the test ends and returns the results of
 // all reloads.
-func startWatch(t *testing.T, opts ...gonf.Option) (*gonf.Live, <-chan reload) {
+func startWatch(t *testing.T, opts ...gonf.WatchOption) (*gonf.Live, <-chan reload) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	reloads := make(chan reload, 10)
-	opts = append([]gonf.Option{gonf.WithLogger(discard)}, opts...)
+	opts = append([]gonf.WatchOption{gonf.WithLogger(discard)}, opts...)
 	opts = append(opts, gonf.OnReload(func(cfg *gonf.Config, err error) {
 		reloads <- reload{cfg: cfg, err: err}
 	}))
@@ -274,6 +274,27 @@ func TestWatch_WatcherFails(t *testing.T) {
 		}
 		if want := `gonf: source "test:live": connection lost`; r.err.Error() != want {
 			t.Errorf("error = %q, want %q", r.err, want)
+		}
+	})
+}
+
+func TestWatch_WatcherRetries(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		src := newLiveSource(map[string]string{"a": "1"})
+		src.watchErr = errors.New("connection lost")
+		_, reloads := startWatch(t, gonf.WithSources(src))
+		receive(t, src.started)
+		src.mu.Lock()
+		src.watchErr = nil
+		src.mu.Unlock()
+
+		if r := receive(t, reloads); r.err == nil {
+			t.Fatal("first result is no error")
+		}
+		receive(t, src.started) // watched again after the delay
+		if r := receive(t, reloads); r.err != nil {
+			t.Errorf("reload after the retry: %v", r.err)
 		}
 	})
 }
@@ -498,7 +519,7 @@ func TestWithLogger_WatcherFails(t *testing.T) {
 		_, reloads := startWatch(t, gonf.WithSources(src), gonf.WithLogger(slog.New(&logged)))
 
 		receive(t, reloads)
-		expected := []string{`WARN gonf: watching a source failed, retrying after the next reload: gonf: source "test:live": connection lost`}
+		expected := []string{`WARN gonf: watching a source failed, retrying: gonf: source "test:live": connection lost`}
 		if got := logged.all(); !slices.Equal(got, expected) {
 			t.Errorf("logged %q, want %q", got, expected)
 		}

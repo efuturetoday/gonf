@@ -37,6 +37,12 @@ Mapping has it.
 `Get` panics if the Mapping was not registered, because that is a
 programming error; every configuration error is reported by `Load`.
 
+A Mapping is identified by the pointer `NewMapping` returned, not by its
+prefix or type. Declare it once, as a package variable, and pass that
+variable to `WithMappings` and to `Get`. A second `NewMapping` with the
+same prefix and type is another Mapping: `Get` on it panics, and the
+two bind their keys independently.
+
 `Get` binds nothing; it returns the value bound at `Load`. Slices, maps and
 pointers in it are copies, so changing them does not change what other
 callers get. A struct without them is returned as is, without any copy.

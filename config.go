@@ -21,6 +21,8 @@ type Config struct {
 	validator  func(v any) error
 	converters converters
 	functions  *functions
+	// secretWords are those of WithSecretWords.
+	secretWords []string
 	// mappings holds the bound value of every Mapping given with
 	// WithMappings.
 	mappings map[AnyMapping]boundMapping

@@ -63,19 +63,23 @@ system events can replace polling.
 ## Reacting and logging
 
 `boot.Watch` logs to `slog.Default()`: every reload at level Info, failed
-reloads and Sources that failed at level Warn. `gonf.WithLogger` sets
+reloads and Sources that failed at level Warn. `boot.WithLogger` sets
 another logger. To react to reloads, e.g. for a metric or a health check,
 pass a function:
 
 ```go
-boot.Watch(ctx, boot.With(gonf.OnReload(func(cfg *gonf.Config, err error) {
+boot.Watch(ctx, boot.OnReload(func(cfg *gonf.Config, err error) {
 	if err != nil {
 		reloadFailures.Inc()
 	}
-})))
+}))
 ```
 
 ## Your own Sources
+
+If `Watch` of a Source fails, gonf reports the error like a failed reload,
+watches again after 1 s, then after twice as long each time up to 1 min,
+and reloads with each retry, since changes may have been missed.
 
 A Source that notices changes itself implements `gonf.Watcher`. A Source
 reading from a database could check a version every 5 s and report a
@@ -104,7 +108,8 @@ Who closes a Source depends on who created it:
 
 ## Without boot
 
-`gonf.Watch` takes the same options as `gonf.Load`. Files from
+`gonf.Watch` takes the same options as `gonf.Load`, plus `gonf.OnReload`
+and `gonf.WithLogger`, which `gonf.Load` does not accept. Files from
 `file.New` are checked every 2 s; `source.WithTrigger` changes that:
 
 ```go

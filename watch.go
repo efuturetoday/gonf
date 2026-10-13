@@ -3,7 +3,6 @@ package gonf
 import (
 	"context"
 	"log/slog"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -24,19 +23,47 @@ type Watcher interface {
 // steps, causes one reload.
 const reloadDelay = 100 * time.Millisecond
 
+// watchOptions are the options of Watch: those of Load and its own.
+type watchOptions struct {
+	loadOptions
+	onReload func(cfg *Config, err error)
+	logger   *slog.Logger
+}
+
+// A WatchOption configures Watch. Every Option is one, so Watch takes
+// everything Load takes; OnReload and WithLogger are WatchOptions only and
+// do not compile as options of Load.
+type WatchOption interface {
+	applyWatch(*watchOptions)
+}
+
+type watchOptionFunc func(*watchOptions)
+
+func (f watchOptionFunc) applyWatch(o *watchOptions) { f(o) }
+
+// applyWatch makes an Option a WatchOption.
+func (o Option) applyWatch(w *watchOptions) { o(&w.loadOptions) }
+
+// A Watcher that fails is watched again after minRetryDelay, then after
+// twice as long each time, up to maxRetryDelay.
+const (
+	minRetryDelay = time.Second
+	maxRetryDelay = time.Minute
+)
+
 // OnReload makes Watch call fn after every reload: with the new Config, or
 // with the error that kept the previous one. fn is never called
-// concurrently, and no reload starts while it runs. Load ignores it.
-func OnReload(fn func(cfg *Config, err error)) Option {
-	return func(o *loadOptions) { o.onReload = fn }
+// concurrently, and no reload starts while it runs.
+func OnReload(fn func(cfg *Config, err error)) WatchOption {
+	return watchOptionFunc(func(o *watchOptions) { o.onReload = fn })
 }
 
 // WithLogger sets the logger Watch reports to: reloads at level Info;
 // failed reloads, failed Watchers and Sources that failed to close at level
 // Warn. Without it Watch uses slog.Default. Load does not log; it returns
 // its errors.
-func WithLogger(l *slog.Logger) Option {
-	return func(o *loadOptions) { o.logger = l }
+func WithLogger(l *slog.Logger) WatchOption {
+	return watchOptionFunc(func(o *watchOptions) { o.logger = l })
 }
 
 // Live holds the current Config of Watch. It is safe for concurrent use.
@@ -59,25 +86,26 @@ func (l *Live) Config() *Config {
 // profiles and all Mappings. If it succeeds, Live.Config returns the new
 // Config; if it fails, the previous Config stays. Either way the function
 // given with OnReload learns about it, and Watch logs it (see WithLogger). A Watcher that fails is reported the
-// same way, as a SourceError; it is watched again after the next reload.
+// same way, as a SourceError; it is watched again after a delay that grows
+// from one second to one minute, and every retry also reloads, since
+// changes may have been missed.
 //
 // If the first Load fails, Watch returns its error and does not watch.
-func Watch(ctx context.Context, opts ...Option) (*Live, error) {
-	opts = slices.Clone(opts)
-	cfg, created, err := load(ctx, opts)
+func Watch(ctx context.Context, opts ...WatchOption) (*Live, error) {
+	var o watchOptions
+	for _, opt := range opts {
+		opt.applyWatch(&o)
+	}
+	cfg, created, err := load(ctx, &o.loadOptions)
 	if err != nil {
 		_ = release(created, nil) // the error of load matters, not this one
 		return nil, err
-	}
-	var o loadOptions
-	for _, opt := range opts {
-		opt(&o)
 	}
 	l := &Live{done: make(chan struct{})}
 	l.cfg.Store(cfg)
 	w := &reloader{
 		live:     l,
-		opts:     opts,
+		opts:     &o.loadOptions,
 		onReload: o.onReload,
 		logger:   o.logger,
 		changed:  make(chan struct{}, 1),
@@ -90,7 +118,7 @@ func Watch(ctx context.Context, opts ...Option) (*Live, error) {
 // reloader is the state of one Watch.
 type reloader struct {
 	live     *Live
-	opts     []Option
+	opts     *loadOptions
 	onReload func(cfg *Config, err error)
 	// logger is nil for slog.Default, which is read when logging so that a
 	// later slog.SetDefault applies.
@@ -117,7 +145,7 @@ func (w *reloader) run(ctx context.Context, cfg *Config, created []Source) {
 		case <-ctx.Done():
 			return
 		case err := <-w.failed:
-			w.log().WarnContext(ctx, "gonf: watching a source failed, retrying after the next reload", "error", err)
+			w.log().WarnContext(ctx, "gonf: watching a source failed, retrying", "error", err)
 			w.report(nil, err)
 		case <-w.changed:
 			if !w.settle(ctx) {
@@ -157,19 +185,39 @@ func (w *reloader) start(ctx context.Context, cfg *Config) (stop func()) {
 		running.Add(1)
 		go func() {
 			defer running.Done()
-			err := watcher.Watch(ctx, w.signal)
-			if err == nil || ctx.Err() != nil {
-				return
-			}
-			select {
-			case w.failed <- &SourceError{Source: s.src.Name(), Err: err}:
-			case <-ctx.Done():
-			}
+			w.keepWatching(ctx, s.src.Name(), watcher)
 		}()
 	}
 	return func() {
 		cancel()
 		running.Wait()
+	}
+}
+
+// keepWatching runs watcher until ctx ends. If Watch fails, it reports the
+// error, waits with a growing delay and watches again; since changes may
+// have been missed meanwhile, it also asks for a reload.
+func (w *reloader) keepWatching(ctx context.Context, name string, watcher Watcher) {
+	delay := minRetryDelay
+	for {
+		err := watcher.Watch(ctx, w.signal)
+		if err == nil || ctx.Err() != nil {
+			return
+		}
+		select {
+		case w.failed <- &SourceError{Source: name, Err: err}:
+		case <-ctx.Done():
+			return
+		}
+		t := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return
+		case <-t.C:
+		}
+		delay = min(2*delay, maxRetryDelay)
+		w.signal()
 	}
 }
 

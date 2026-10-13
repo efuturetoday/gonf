@@ -79,16 +79,34 @@ func secretElem(t reflect.Type) reflect.Type {
 	return s.secretType()
 }
 
-// secretWords mark a key as secret by its name, also without a Secret
-// field, as in "db.password", "api-token" or "AWS_SECRET_ACCESS_KEY".
-var secretWords = []string{"password", "secret", "token", "credential"}
+// defaultSecretWords mark a key as secret by its name, also without a
+// Secret field, as in "db.password", "api-token" or "AWS_SECRET_ACCESS_KEY".
+var defaultSecretWords = []string{"password", "secret", "token", "credential"}
 
-// isSecretName reports whether key contains one of secretWords, in any case.
-func isSecretName(key string) bool {
+// WithSecretWords adds words to those that mark a key as secret by its
+// name: "password", "secret", "token" and "credential". A key that contains
+// one of them, in any case, is masked by Explain and shown as secret by
+// Describe, e.g. WithSecretWords("passphrase", "private-key"). It can be
+// passed multiple times; empty words are ignored.
+func WithSecretWords(words ...string) Option {
+	return func(o *loadOptions) {
+		for _, w := range words {
+			if w = strings.ToLower(strings.TrimSpace(w)); w != "" {
+				o.secretWords = append(o.secretWords, w)
+			}
+		}
+	}
+}
+
+// isSecretName reports whether key contains one of the default secret
+// words or one of extra, in any case.
+func isSecretName(key string, extra []string) bool {
 	key = strings.ToLower(key)
-	for _, w := range secretWords {
-		if strings.Contains(key, w) {
-			return true
+	for _, words := range [][]string{defaultSecretWords, extra} {
+		for _, w := range words {
+			if strings.Contains(key, w) {
+				return true
+			}
 		}
 	}
 	return false

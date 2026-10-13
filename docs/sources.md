@@ -255,9 +255,32 @@ type Source interface {
 }
 ```
 
+The name is checked only by `Load`, not when the Source is created: a name
+without a valid scheme (at least two characters, as in `file:`) makes `Load`
+fail with `gonf.ErrInvalidSourceName`, wrapped in a `gonf.SourceError`.
+
 `Load` returns flat keys; a key `%dev.x` belongs to the profile `dev`. Set
 `Value.Raw` and, if known, `Value.Origin.Location`; gonf fills in the rest.
 For content in a known format, `source.New(name, read, format)` is enough.
+
+### Optional interfaces
+
+A Source gets more behavior by implementing further interfaces. gonf finds
+them by a type assertion, so nothing has to be registered; implement all
+methods of an interface or none of it:
+
+| Interface | Implement it if the Source … |
+| --- | --- |
+| `gonf.MappedSource` (`LoadMapped`) | has names that are not keys, such as environment variables; gets the known keys and returns the values it matches |
+| `gonf.NameReporter` (`LoadReport`) | is a `MappedSource` that can also name the entries that look meant for a Mapping but match no key (they become warnings) |
+| `gonf.KeyMapper` (`MapKey`) | has its own naming scheme; `Describe` and `Explain` show it, e.g. as the variable of a key |
+| `gonf.OptionalSource` | may have nothing to read, such as a missing file; `Config.Sources` shows it |
+| `gonf.ProfileSource` | holds only the keys of one profile |
+| `gonf.Watcher` (`Watch`) | notices changes itself, see [Reloading](reload.md) |
+| `io.Closer` | needs closing; gonf closes the Sources a factory creates, never those passed with `WithSources` |
+
+`source.New` and `source.Meta` already implement the common ones for
+Sources with a document.
 
 A Source that needs configuration itself, such as a Vault Source whose
 address is in `app.properties`, is created by a factory. The factory brings

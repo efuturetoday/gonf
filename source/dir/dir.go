@@ -44,18 +44,18 @@ const MaxFileSize = 1 << 20
 // With source.Optional a missing directory yields no values.
 func New(path string, opts ...source.Option) gonf.Source {
 	opts = append([]source.Option{source.WithOrdinal(Ordinal)}, opts...)
-	_, trim := source.NewMeta("", 0, opts...).Extension(trimKey{})
+	trim, _ := trimSetting.Get(source.NewMeta("", 0, opts...))
 	return source.New("dir:"+path, reader(path, trim), format{}, opts...)
 }
 
-type trimKey struct{}
+var trimSetting = source.NewSetting[bool]()
 
 // TrimNewline is an Option for New. It removes one newline ("\n" or
 // "\r\n") from the end of every value, so that a file written with echo
 // holds the value without the newline. Further newlines and other white
 // space stay.
 func TrimNewline() source.Option {
-	return source.Extension(trimKey{}, true)
+	return trimSetting.Set(true)
 }
 
 type entry struct {

@@ -108,7 +108,7 @@ func Describe(opts ...Option) ([]Property, error) {
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	props := describe(mappings, roots, mapper)
+	props := describe(mappings, roots, mapper, o.secretWords)
 	if err := conflictError(props); err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func Describe(opts ...Option) ([]Property, error) {
 // their order; of two Mappings with the same key, the first describes it.
 // Describe and Config.Properties both use it, so that the documentation and
 // the explanation of a key cannot drift.
-func describe(mappings []AnyMapping, roots []*model, mapper KeyMapper) []Property {
+func describe(mappings []AnyMapping, roots []*model, mapper KeyMapper, secretWords []string) []Property {
 	out := []Property{}
 	seen := map[string]struct{}{}
 	for i, m := range mappings {
@@ -128,7 +128,7 @@ func describe(mappings []AnyMapping, roots []*model, mapper KeyMapper) []Propert
 				return
 			}
 			seen[key] = struct{}{}
-			p := propertyOf(key, f, m)
+			p := propertyOf(key, f, m, secretWords)
 			if mapper != nil && !strings.Contains(key, "<") {
 				p.Env = mapper.MapKey(key)
 			}
@@ -140,7 +140,7 @@ func describe(mappings []AnyMapping, roots []*model, mapper KeyMapper) []Propert
 
 // propertyOf returns the Property of key, which the Mapping m reads as
 // field f; key has <name> and <n> for the entries of maps and lists.
-func propertyOf(key string, f field, m AnyMapping) Property {
+func propertyOf(key string, f field, m AnyMapping, secretWords []string) Property {
 	t := f.m.typ
 	p := Property{Key: key, Type: t.String(), Required: f.isRequired, Doc: f.desc, Mapping: m.Prefix(), Location: m.origin().Location}
 	if isSecret(t) {
@@ -151,7 +151,7 @@ func propertyOf(key string, f field, m AnyMapping) Property {
 		opt(&o)
 	}
 	p.IsUnknownAllowed = o.isUnknownAllowed
-	p.Secret = f.m.isSecret || isSecretName(key)
+	p.Secret = f.m.isSecret || isSecretName(key, secretWords)
 	if f.def != nil {
 		def := *f.def
 		if p.Secret && def != "" {

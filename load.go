@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"reflect"
 	"slices"
@@ -26,9 +25,8 @@ type loadOptions struct {
 	mappings       []AnyMapping
 	validator      func(v any) error
 	converters     []converter
-	onReload       func(cfg *Config, err error)
-	logger         *slog.Logger
 	functions      []Function
+	secretWords    []string
 }
 
 // WithSources adds Sources. Can be passed multiple times; the order of
@@ -154,18 +152,24 @@ func WithFactories(factories ...SourceFactory) Option {
 // Every Source is loaded even if an earlier one fails; all failures are
 // returned together, as SourceErrors joined with errors.Join.
 func Load(ctx context.Context, opts ...Option) (*Config, error) {
-	cfg, created, err := load(ctx, opts)
+	cfg, created, err := load(ctx, newLoadOptions(opts))
 	_ = release(created, nil) // the Sources are no longer used either way
 	return cfg, err
 }
 
-// load is Load without closing the Sources that factories created, which
-// it returns, also on error.
-func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
+// newLoadOptions applies opts once. The result is only read afterwards, so
+// Watch shares it between reloads.
+func newLoadOptions(opts []Option) *loadOptions {
 	var o loadOptions
 	for _, opt := range opts {
 		opt(&o)
 	}
+	return &o
+}
+
+// load is Load without closing the Sources that factories created, which
+// it returns, also on error.
+func load(ctx context.Context, o *loadOptions) (*Config, []Source, error) {
 	profiles, err := activeProfiles(o.profiles)
 	if err != nil {
 		return nil, nil, fmt.Errorf("gonf: %w", err)
@@ -206,7 +210,7 @@ func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
 		loaded = append(loaded, ps...)
 	}
 	cfg := newConfig(loaded, profiles)
-	cfg.validator, cfg.converters, cfg.functions = o.validator, cs, fns
+	cfg.validator, cfg.converters, cfg.functions, cfg.secretWords = o.validator, cs, fns, o.secretWords
 	if len(o.factories) > 0 {
 		late, made, err := runFactories(ctx, o.factories, cfg, in)
 		created = append(created, made...)
@@ -214,7 +218,7 @@ func load(ctx context.Context, opts []Option) (*Config, []Source, error) {
 			return nil, created, err
 		}
 		cfg = newConfig(append(loaded, late...), profiles)
-		cfg.validator, cfg.converters, cfg.functions = o.validator, cs, fns
+		cfg.validator, cfg.converters, cfg.functions, cfg.secretWords = o.validator, cs, fns, o.secretWords
 	}
 	if err := cfg.bindMappings(o.mappings); err != nil {
 		return nil, created, err

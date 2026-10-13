@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"sync"
 )
 
 // Mapping is the configuration of one module, bound to the keys under a
@@ -101,6 +102,12 @@ func NewMapping[T any](prefix string, opts ...MappingOption) *Mapping[T] {
 	return &Mapping[T]{prefix: prefix, opts: slices.Clone(opts), location: callerLocation()}
 }
 
+// workDir returns the working directory at the first call, or "".
+var workDir = sync.OnceValue(func() string {
+	wd, _ := os.Getwd()
+	return wd
+})
+
 // callerLocation returns file:line of the caller of the caller, relative
 // to the working directory if below it, or "" if unknown.
 func callerLocation() string {
@@ -108,7 +115,7 @@ func callerLocation() string {
 	if !ok {
 		return ""
 	}
-	if wd, err := os.Getwd(); err == nil {
+	if wd := workDir(); wd != "" {
 		if rel, err := filepath.Rel(wd, file); err == nil && filepath.IsLocal(rel) {
 			file = rel
 		}
@@ -296,7 +303,7 @@ func (c *Config) bindMappings(mappings []AnyMapping) error {
 	if err := errors.Join(errs...); err != nil {
 		return err
 	}
-	c.properties = describe(bound, roots, c.keyMapper())
+	c.properties = describe(bound, roots, c.keyMapper(), c.secretWords)
 	c.property = make(map[string]int, len(c.properties))
 	for i, p := range c.properties {
 		c.property[p.Key] = i

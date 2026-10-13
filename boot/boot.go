@@ -40,6 +40,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -174,6 +175,33 @@ func With(opts ...gonf.Option) Option {
 	return func(o *options) { o.core = append(o.core, opts...) }
 }
 
+// A WatchOption configures Watch. Every Option is one; OnReload and
+// WithLogger are WatchOptions only.
+type WatchOption interface {
+	applyWatch(*watchOptions)
+}
+
+type watchOptions struct {
+	options
+	watch []gonf.WatchOption
+}
+
+func (o Option) applyWatch(w *watchOptions) { o(&w.options) }
+
+type watchOptionFunc func(*watchOptions)
+
+func (f watchOptionFunc) applyWatch(o *watchOptions) { f(o) }
+
+// OnReload is gonf.OnReload for Watch.
+func OnReload(fn func(cfg *gonf.Config, err error)) WatchOption {
+	return watchOptionFunc(func(o *watchOptions) { o.watch = append(o.watch, gonf.OnReload(fn)) })
+}
+
+// WithLogger is gonf.WithLogger for Watch.
+func WithLogger(l *slog.Logger) WatchOption {
+	return watchOptionFunc(func(o *watchOptions) { o.watch = append(o.watch, gonf.WithLogger(l)) })
+}
+
 // WithMappings registers Mappings, which Load binds and validates; it is
 // short for With(gonf.WithMappings(mappings...)).
 func WithMappings(mappings ...gonf.AnyMapping) Option {
@@ -188,8 +216,17 @@ func Load(ctx context.Context, opts ...Option) (*gonf.Config, error) {
 
 // Watch loads the configuration like Load and keeps it current until ctx
 // ends, see gonf.Watch and the package documentation.
-func Watch(ctx context.Context, opts ...Option) (*gonf.Live, error) {
-	return gonf.Watch(ctx, build(".", opts)...)
+func Watch(ctx context.Context, opts ...WatchOption) (*gonf.Live, error) {
+	w := watchOptions{options: newOptions()}
+	for _, opt := range opts {
+		opt.applyWatch(&w)
+	}
+	core := buildOptions(".", w.options)
+	all := make([]gonf.WatchOption, 0, len(core)+len(w.watch))
+	for _, o := range core {
+		all = append(all, o)
+	}
+	return gonf.Watch(ctx, append(all, w.watch...)...)
 }
 
 // Describe lists the keys of the Mappings registered with WithMappings or
@@ -214,7 +251,16 @@ type location struct {
 // build returns the options for gonf.Load and gonf.Watch, with workDir as
 // the working directory.
 func build(workDir string, opts []Option) []gonf.Option {
-	o := options{formats: []format{
+	o := newOptions()
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return buildOptions(workDir, o)
+}
+
+// newOptions returns the options before any Option is applied.
+func newOptions() options {
+	return options{formats: []format{
 		{ext: "properties", format: properties.Format},
 		{ext: "json", format: json.Format},
 	}, functions: []gonf.Function{
@@ -225,9 +271,10 @@ func build(workDir string, opts []Option) []gonf.Option {
 		uuid.Function(),
 		aesgcm.Function(),
 	}}
-	for _, opt := range opts {
-		opt(&o)
-	}
+}
+
+// buildOptions returns the options for gonf.Load and gonf.Watch from o.
+func buildOptions(workDir string, o options) []gonf.Option {
 	if o.dir != "" {
 		workDir = o.dir
 	}

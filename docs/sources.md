@@ -251,6 +251,7 @@ app.image.tags:
 | `dirty` | whether there are changes that are not committed, untracked files included |
 | `changes` | a short hash of these changes: the same changes give the same hash |
 | `version` | the short commit, or `<commit>-dirty.<changes>` |
+| `remote` | the web address of `origin`, such as `https://github.com/acme/hello`, without credentials; in CI without a remote from `GITHUB_SERVER_URL` and `GITHUB_REPOSITORY`, or `CI_PROJECT_URL` |
 
 A default follows a `:`, as for a key: `${git::version:latest}` outside a
 repository or without the `git` command. Without one, the value fails with

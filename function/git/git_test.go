@@ -158,3 +158,39 @@ func TestFunction_noRepository(t *testing.T) {
 		t.Errorf("without git with a default: %q", got)
 	}
 }
+
+// The remote is the web address of origin, without credentials.
+func TestFunction_remote(t *testing.T) {
+	dir, run := repo(t)
+	for _, k := range []string{"GITHUB_SERVER_URL", "GITHUB_REPOSITORY", "CI_PROJECT_URL"} {
+		t.Setenv(k, "")
+	}
+	if _, err := eval(t, dir, "${git::remote}"); err == nil || !strings.Contains(err.Error(), "no remote origin") {
+		t.Errorf("without a remote: %v", err)
+	}
+	t.Setenv("GITHUB_SERVER_URL", "https://github.com")
+	t.Setenv("GITHUB_REPOSITORY", "acme/ci")
+	if got := must(t, dir, "${git::remote}"); got != "https://github.com/acme/ci" {
+		t.Errorf("in GitHub Actions = %q", got)
+	}
+	run("remote", "add", "origin", "git@github.com:acme/hello.git")
+	if got := must(t, dir, "${git::remote}"); got != "https://github.com/acme/hello" {
+		t.Errorf("remote = %q", got)
+	}
+}
+
+func TestWebURL(t *testing.T) {
+	t.Parallel()
+	for in, expected := range map[string]string{
+		"git@github.com:acme/hello.git":                "https://github.com/acme/hello",
+		"ssh://git@gitlab.com:22/group/sub/app.git":    "https://gitlab.com/group/sub/app",
+		"https://user:token@github.com/acme/hello.git": "https://github.com/acme/hello",
+		"https://git.example:8443/acme/hello":          "https://git.example:8443/acme/hello",
+		"/srv/git/hello.git":                           "",
+		"file:///srv/git/hello.git":                    "",
+	} {
+		if got := git.WebURL(in); got != expected {
+			t.Errorf("webURL(%q) = %q, want %q", in, got, expected)
+		}
+	}
+}

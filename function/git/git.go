@@ -18,6 +18,10 @@
 //	changes  a short hash of these changes, the same for the same changes;
 //	         empty without changes
 //	version  the short commit, or <commit>-dirty.<changes>
+//	remote   the web address of the remote origin, such as
+//	         https://github.com/acme/hello for git@github.com:acme/hello.git,
+//	         without credentials; in CI without a remote, from
+//	         GITHUB_SERVER_URL and GITHUB_REPOSITORY or CI_PROJECT_URL
 //
 // The Function runs the git command, only when a value calls it, and gonf
 // keeps its result for the Load, so a reload of Watch asks git again.
@@ -32,9 +36,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -83,12 +89,12 @@ func Function(dir string, opts ...Option) gonf.Function {
 	}}
 }
 
-var errUnknown = errors.New("unknown argument (known: commit, sha, branch, tag, dirty, changes, version)")
+var errUnknown = errors.New("unknown argument (known: commit, sha, branch, tag, dirty, changes, version, remote)")
 
 // value returns what git knows as what.
 func (r *repo) value(what string) (string, error) {
 	switch what {
-	case "commit", "sha", "branch", "tag", "dirty", "changes", "version":
+	case "commit", "sha", "branch", "tag", "dirty", "changes", "version", "remote":
 	default:
 		return "", fmt.Errorf("%q: %w", what, errUnknown)
 	}
@@ -96,6 +102,19 @@ func (r *repo) value(what string) (string, error) {
 		return "", err
 	}
 	switch what {
+	case "remote":
+		if u, _ := r.git("remote", "get-url", "origin"); u != "" {
+			if w := webURL(u); w != "" {
+				return w, nil
+			}
+		}
+		if server, repo := os.Getenv("GITHUB_SERVER_URL"), os.Getenv("GITHUB_REPOSITORY"); server != "" && repo != "" {
+			return strings.TrimSuffix(server, "/") + "/" + repo, nil
+		}
+		if u := os.Getenv("CI_PROJECT_URL"); u != "" {
+			return u, nil
+		}
+		return "", errors.New("no remote origin")
 	case "branch":
 		if b, _ := r.git("symbolic-ref", "--short", "-q", "HEAD"); b != "" {
 			return b, nil
@@ -218,4 +237,35 @@ func findRepo(dir string) string {
 		}
 		dir = parent
 	}
+}
+
+// scpLike is an address of git as scp writes it: git@github.com:acme/hello.git.
+var scpLike = regexp.MustCompile(`^(?:[^@/]+@)?([^:/]+):(.+)$`)
+
+// webURL returns the web address of the address of a remote of git, ""
+// if it has none: https://github.com/acme/hello of
+// git@github.com:acme/hello.git, ssh://git@github.com/acme/hello or
+// https://user:token@github.com/acme/hello.git.
+func webURL(remote string) string {
+	host, path := "", ""
+	if u, err := url.Parse(remote); err == nil && u.Scheme != "" && u.Host != "" {
+		if u.Scheme == "file" {
+			return ""
+		}
+		host, path = u.Hostname(), u.Path
+		if u.Scheme == "http" || u.Scheme == "https" {
+			if u.Port() != "" {
+				host = u.Host
+			}
+		}
+	} else if m := scpLike.FindStringSubmatch(remote); m != nil && !strings.HasPrefix(remote, "/") && !strings.Contains(remote, "://") {
+		host, path = m[1], m[2]
+	} else {
+		return ""
+	}
+	path = strings.TrimSuffix(strings.Trim(path, "/"), ".git")
+	if host == "" || path == "" {
+		return ""
+	}
+	return "https://" + host + "/" + path
 }

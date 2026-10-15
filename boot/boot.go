@@ -16,8 +16,8 @@
 // reads app-<profile>.<ext> next to every app.<ext>, with the same ordinal.
 // Files of inactive profiles are never read.
 //
-// Values may call the Functions env, file, base64, base64-decode, uuid and
-// aes-gcm, as in ${env::HOME} or ${file::/run/secrets/db}. Values written
+// Values may call the Functions env, file, base64, base64-decode, uuid,
+// slug and aes-gcm, as in ${env::HOME} or ${file::/run/secrets/db}. Values written
 // as ${aes-gcm::...} are decrypted with secret/aesgcm. Its key is
 // gonf.secret.aes-gcm.key, e.g. GONF_SECRET_AES_GCM_KEY, from any Source
 // but the one with the encrypted value. The gonf encrypt command encrypts
@@ -51,6 +51,7 @@ import (
 	"github.com/efuturetoday/gonf/format/properties"
 	"github.com/efuturetoday/gonf/function/base64"
 	secretfile "github.com/efuturetoday/gonf/function/file"
+	"github.com/efuturetoday/gonf/function/slug"
 	"github.com/efuturetoday/gonf/function/uuid"
 	"github.com/efuturetoday/gonf/schema"
 	"github.com/efuturetoday/gonf/secret/aesgcm"
@@ -269,6 +270,7 @@ func newOptions() options {
 		base64.Encode(),
 		base64.Decode(),
 		uuid.Function(),
+		slug.Function(),
 		aesgcm.Function(),
 	}}
 }

@@ -226,7 +226,7 @@ key and the line. More in [Sources](docs/sources.md#expressions).
   Schema for editors.
 - **[Sources and formats](docs/sources.md)**: `.properties`, JSON, YAML,
   `.env`, the environment, flags, secret directories, expressions with
-  functions, and your own Sources.
+  functions such as what git knows, and your own Sources.
 - **[Reloading](docs/reload.md)**: `boot.Watch` keeps the configuration
   current when files change, and keeps the previous one if a change is
   invalid.

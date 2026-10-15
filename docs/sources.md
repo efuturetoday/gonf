@@ -223,6 +223,7 @@ rules as other lookups, so profiles apply.
 | `${file::/run/secrets/tls.crt}` | the content of a file, at most 1 MiB; secret |
 | `${base64::...}`, `${base64-decode::...}` | the argument encoded or decoded |
 | `${uuid::}` | a random UUID |
+| `${slug::feature/Login}` | `feature-login`: lower case letters, digits and `-`, at most 63, for a tag of an image or a name in Kubernetes |
 | `${aes-gcm::...}` | a decrypted value; secret, see [Secrets](secrets.md) |
 
 The argument is expanded first, so calls nest:
@@ -231,6 +232,29 @@ secret Function is masked, also through the Functions around it. A Function
 runs once per load for the same argument, so `${uuid::}` gives one value in
 every key that uses it; a Function that must stay the same across reloads
 keeps its result itself. A fallback nests too: `${app.home:${env::HOME}}`.
+
+`function/git` has what git knows of a directory. boot does not register
+it, as it needs the directory; `gonf.WithFunctions(git.Function("."))` or
+`boot.WithFunctions(...)` does:
+
+```yaml
+app.image.tags:
+  - ${git::version:latest}
+  - ${slug::${git::branch}}-${git::commit}
+```
+
+| Argument | Value |
+| --- | --- |
+| `commit`, `sha` | the short and the full commit of HEAD |
+| `branch` | the branch; with a detached HEAD, as in CI, from `GITHUB_HEAD_REF`, `GITHUB_REF_NAME`, `CI_COMMIT_REF_NAME` or `BRANCH_NAME` |
+| `tag` | a tag on HEAD |
+| `dirty` | whether there are changes that are not committed, untracked files included |
+| `changes` | a short hash of these changes: the same changes give the same hash |
+| `version` | the short commit, or `<commit>-dirty.<changes>` |
+
+A default follows a `:`, as for a key: `${git::version:latest}` outside a
+repository or without the `git` command. Without one, the value fails with
+the reason. git runs only for a value that calls it, once per load.
 
 Your own Function is a `gonf.Function{Name, IsSecret, Call, Mapping}`,
 passed to `boot.WithFunctions` or `gonf.WithFunctions`; one with the name of

@@ -134,5 +134,5 @@ gonf: bind "db": db.password: aes-gcm: the key gonf.secret.aes-gcm.key has no va
 Other ways to decrypt, such as a cloud key service, plug in the same way:
 a `gonf.Function` with `IsSecret: true`, passed to `boot.WithFunctions` (or
 `gonf.WithFunctions`) and called as `${name::value}`. boot also provides
-the Functions `env`, `file` (secret), `base64`, `base64-decode` and `uuid`,
+the Functions `env`, `file` (secret), `base64`, `base64-decode`, `uuid` and `slug`,
 as in `${file::/run/secrets/db-password}`.

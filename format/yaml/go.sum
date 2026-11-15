@@ -1,2 +1,4 @@
+github.com/efuturetoday/gonf v0.1.0 h1:50Ko3lTH5MjDJpjSL5tLEDOVp1ESQ5CHwUvyJ9CPfzM=
+github.com/efuturetoday/gonf v0.1.0/go.mod h1:bOp/hJsdyCz3UCaDXVKiqt3ZrsIKQEuC4waBwawee7E=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
 go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=

@@ -1,0 +1,10 @@
+// Builds format/yaml and cmd/gonf against the gonf of this repository.
+// Users of the modules get the gonf version their go.mod requires.
+
+go 1.26.0
+
+use (
+	.
+	./cmd/gonf
+	./format/yaml
+)

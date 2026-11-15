@@ -1,4 +1,4 @@
-github.com/efuturetoday/gonf v0.1.1 h1:JipweZc5RONEadHgSCBRmj5htW2WUHwFTNRVXwGRVVg=
-github.com/efuturetoday/gonf v0.1.1/go.mod h1:bOp/hJsdyCz3UCaDXVKiqt3ZrsIKQEuC4waBwawee7E=
-go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
-go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
+github.com/efuturetoday/gonf v0.1.2 h1:m18XQJ7rr1l8KjiE0ZmlT1pzqTJZL9VMf07EYioZkG0=
+github.com/efuturetoday/gonf v0.1.2/go.mod h1:bOp/hJsdyCz3UCaDXVKiqt3ZrsIKQEuC4waBwawee7E=
+go.yaml.in/yaml/v3 v3.0.6 h1:zcDfvjXEqTQmpjniUBLc91xYJMB2c4QOFxEF/LCEckM=
+go.yaml.in/yaml/v3 v3.0.6/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=

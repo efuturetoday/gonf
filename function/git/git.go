@@ -213,7 +213,7 @@ func (r *repo) changes() (string, error) {
 		if f == "" {
 			continue
 		}
-		fmt.Fprintf(h, "\x00%s\x00", f)
+		h.Write([]byte("\x00" + f + "\x00"))
 		if data, err := os.ReadFile(filepath.Join(top, f)); err == nil {
 			h.Write(data)
 		}

@@ -103,8 +103,8 @@ line; `\uXXXX` escapes. Every value has its line as location.
 numbers keep their text; `null` produces no key; a name twice in an object
 is an error; every value has its line as location.
 
-**YAML** (`github.com/efuturetoday/gonf/format/yaml`, a module of its own):
-names are joined like `.properties` keys, so `db.url: x` equals
+**YAML** (`github.com/efuturetoday/gonf/format/yaml`, a module of its own,
+`go get github.com/efuturetoday/gonf/format/yaml`): names are joined like `.properties` keys, so `db.url: x` equals
 `db: {url: x}`; values keep their text, so `yes` and `0644` reach the struct
 as written; anchors, aliases, merge keys and several documents work; every
 value has its line as location.

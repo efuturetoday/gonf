@@ -208,6 +208,19 @@ app.db.password = **** (file:config/app.properties:2, via env)
 If `DB_PASSWORD` is not set, the start fails with a message that names the
 key and the line. More in [Sources](docs/sources.md#expressions).
 
+## Modules
+
+The core has no dependencies. Everything else is a module of its own,
+released with the same version:
+
+| Module | |
+| --- | --- |
+| [`format/yaml`](docs/sources.md#formats) | YAML files: `go get github.com/efuturetoday/gonf/format/yaml` |
+| [`cmd/gonf`](docs/secrets.md) | `gonf encrypt` for encrypted values: `go install github.com/efuturetoday/gonf/cmd/gonf@latest` |
+
+Planned: HashiCorp Vault, Azure Key Vault, Azure App Configuration, AWS
+SSM Parameter Store, AWS Secrets Manager, GCP Secret Manager.
+
 ## Next steps
 
 - **[Profiles](docs/profiles.md)**: `%dev.` keys, `app-dev.properties`,

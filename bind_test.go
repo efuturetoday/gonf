@@ -551,7 +551,7 @@ func TestBind_Errors(t *testing.T) {
 			name:     "indexed element missing field",
 			values:   map[string]string{"x.s[0].other": "1"},
 			bind:     bindAs[requiredList],
-			expected: `gonf: bind "x": x.s[0].n: required, no value`,
+			expected: "gonf: bind \"x\": 2 problems:\n  x.s[0].n: required, no value\n  x.s[0].other: unknown key (from file:app.properties)",
 		},
 		{
 			name:     "map key",
@@ -687,6 +687,9 @@ func TestBind_Unknown(t *testing.T) {
 		Hosts   []string
 		Labels  map[string]string
 		Skipped string `cfg:"-"`
+		// Replicas and Shards have entries that are groups.
+		Replicas map[string]pool
+		Shards   []pool
 	}
 	tests := []struct {
 		name          string
@@ -702,6 +705,7 @@ func TestBind_Unknown(t *testing.T) {
 			values: map[string]string{
 				"db.url": "postgres://${db.host}/${db.name:app}", "db.host": "h",
 				"db.hosts": "a", "db.hosts[0]": "ignored", "db.labels.a.b": "1",
+				"db.replicas.eu.max-size": "3", "db.shards[0].max-size": "4",
 				"other.key": "outside the prefix", "dbx.key": "outside the prefix",
 			},
 			env: upperSource{"DB_URLL": "env names are not checked"},
@@ -721,6 +725,14 @@ func TestBind_Unknown(t *testing.T) {
 			expectedError: `gonf: bind "db": 2 problems:
   db.completely-different: unknown key (from file:app.properties)
   db.skipped: unknown key (from file:app.properties)`,
+		},
+		{
+			name:   "typos in entries of a map and a list",
+			prefix: "db",
+			values: map[string]string{"db.url": "u", "db.replicas.eu.max-szie": "3", "db.shards[0].max-szie": "4"},
+			expectedError: `gonf: bind "db": 2 problems:
+  db.replicas.eu.max-szie: unknown key, did you mean db.replicas.eu.max-size? (from file:app.properties)
+  db.shards[0].max-szie: unknown key, did you mean db.shards[0].max-size? (from file:app.properties)`,
 		},
 		{
 			name:          "too far for a suggestion",

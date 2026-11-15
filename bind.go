@@ -322,7 +322,11 @@ func (b *binder) bindPointer(key, property string, f field, v reflect.Value) {
 }
 
 func (b *binder) bindSlice(key, property string, f field, v reflect.Value) {
-	b.open = append(b.open, key+"[")
+	// Elements that are groups know their fields, so a typo in one is an
+	// unknown key; any index of single values is an element.
+	if !f.m.elem.isGroup() {
+		b.open = append(b.open, key+"[")
+	}
 	s, origin, ok, err := b.value(key)
 	switch {
 	case err != nil:
@@ -381,7 +385,11 @@ func (b *binder) bindMap(key, property string, f field, v reflect.Value) {
 	t := v.Type()
 	isGroupValue := f.m.elem.isGroup()
 	prefix := key + "."
-	b.open = append(b.open, prefix)
+	// Entries that are groups know their fields, so a typo in one is an
+	// unknown key; any name of single values is an entry.
+	if !isGroupValue {
+		b.open = append(b.open, prefix)
+	}
 	var names []string
 	for _, k := range b.c.keys {
 		rest, ok := strings.CutPrefix(k, prefix)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/efuturetoday/gonf/compare/v0.1.1...v0.1.2) (2026-11-15)
+
+
+### Bug Fixes
+
+* format/yaml and cmd/gonf require the gonf of their release ([24c533d](https://github.com/efuturetoday/gonf/commit/24c533d3977169d9b7e70330c2a1a6e0ac21c571))
+
 ## [0.1.1](https://github.com/efuturetoday/gonf/compare/v0.1.0...v0.1.1) (2026-11-15)
 
 

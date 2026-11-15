@@ -1,0 +1,25 @@
+name: release
+
+# release-please keeps a pull request with the next version and its
+# changelog, from the Conventional Commits on main; merging it tags the
+# release.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      # The module proxy fetches the new version, so pkg.go.dev shows it.
+      - if: steps.release.outputs.release_created
+        run: curl -fsS "https://proxy.golang.org/github.com/efuturetoday/gonf/@v/${{ steps.release.outputs.tag_name }}.info"

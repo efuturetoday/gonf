@@ -8,6 +8,7 @@ import (
 	"github.com/efuturetoday/gonf"
 	"github.com/efuturetoday/gonf/source"
 	"github.com/efuturetoday/gonf/source/env"
+	"github.com/efuturetoday/gonf/source/sourcetest"
 )
 
 // Not parallel: t.Setenv modifies the process environment.
@@ -102,4 +103,10 @@ func FuzzMapKey(f *testing.F) {
 			t.Errorf("MapKey not idempotent: %q -> %q", got, again)
 		}
 	})
+}
+
+// Not parallel: t.Setenv modifies the process environment.
+func TestContract(t *testing.T) {
+	t.Setenv("GONF_CONTRACT_URL", "postgres://env")
+	sourcetest.Run(t, env.New(), map[string]string{"gonf.contract.url": "postgres://env"})
 }

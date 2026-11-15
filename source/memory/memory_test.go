@@ -7,6 +7,7 @@ import (
 
 	"github.com/efuturetoday/gonf/source"
 	"github.com/efuturetoday/gonf/source/memory"
+	"github.com/efuturetoday/gonf/source/sourcetest"
 )
 
 func TestNew(t *testing.T) {
@@ -52,4 +53,10 @@ func TestDefaults(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestContract(t *testing.T) {
+	t.Parallel()
+	values := map[string]string{"db.url": "postgres://db", "%dev.db.url": "postgres://dev"}
+	sourcetest.Run(t, memory.New(values), values)
 }

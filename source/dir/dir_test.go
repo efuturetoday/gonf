@@ -14,6 +14,7 @@ import (
 	"github.com/efuturetoday/gonf"
 	"github.com/efuturetoday/gonf/source"
 	"github.com/efuturetoday/gonf/source/dir"
+	"github.com/efuturetoday/gonf/source/sourcetest"
 )
 
 func write(t *testing.T, path, content string) {
@@ -248,4 +249,11 @@ func TestNew_WatchSwap(t *testing.T) {
 			t.Fatal("swap of ..data not noticed")
 		}
 	})
+}
+
+func TestContract(t *testing.T) {
+	t.Parallel()
+	path := t.TempDir()
+	write(t, filepath.Join(path, "db.url"), "postgres://db")
+	sourcetest.Run(t, dir.New(path), map[string]string{"db.url": "postgres://db"})
 }

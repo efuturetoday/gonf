@@ -18,6 +18,7 @@ import (
 	"github.com/efuturetoday/gonf/format/properties"
 	"github.com/efuturetoday/gonf/source"
 	"github.com/efuturetoday/gonf/source/file"
+	"github.com/efuturetoday/gonf/source/sourcetest"
 )
 
 func TestNew(t *testing.T) {
@@ -155,4 +156,14 @@ func TestNew_Watch(t *testing.T) {
 			t.Fatal("no reload")
 		}
 	})
+}
+
+func TestContract(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "app.properties")
+	if err := os.WriteFile(path, []byte("db.url=postgres://db\n%dev.db.url=postgres://dev\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sourcetest.Run(t, file.New(path, properties.Format, source.Optional()),
+		map[string]string{"db.url": "postgres://db", "%dev.db.url": "postgres://dev"})
 }

@@ -6,7 +6,11 @@
   "packages": {
     ".": {
       "package-name": "gonf",
-      "exclude-paths": ["format/yaml", "cmd/gonf"]
+      "exclude-paths": [
+        "format/yaml",
+        "cmd/gonf"
+      ],
+      "initial-version": "0.1.0"
     }
   }
 }

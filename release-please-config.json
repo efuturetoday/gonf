@@ -2,15 +2,38 @@
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "release-type": "go",
   "bump-minor-pre-major": true,
-  "include-component-in-tag": false,
+  "tag-separator": "/",
   "packages": {
     ".": {
       "package-name": "gonf",
+      "component": "gonf",
+      "include-component-in-tag": false,
       "exclude-paths": [
         "format/yaml",
         "cmd/gonf"
       ],
       "initial-version": "0.1.0"
+    },
+    "format/yaml": {
+      "package-name": "format/yaml",
+      "component": "format/yaml",
+      "include-component-in-tag": true
+    },
+    "cmd/gonf": {
+      "package-name": "cmd/gonf",
+      "component": "cmd/gonf",
+      "include-component-in-tag": true
     }
-  }
+  },
+  "plugins": [
+    {
+      "type": "linked-versions",
+      "groupName": "gonf",
+      "components": [
+        "gonf",
+        "format/yaml",
+        "cmd/gonf"
+      ]
+    }
+  ]
 }

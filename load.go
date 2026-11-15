@@ -209,8 +209,9 @@ func load(ctx context.Context, o *loadOptions) (*Config, []Source, error) {
 		}
 		loaded = append(loaded, ps...)
 	}
+	ev := evaluation{validator: o.validator, converters: cs, functions: fns, secretWords: o.secretWords}
 	cfg := newConfig(loaded, profiles)
-	cfg.validator, cfg.converters, cfg.functions, cfg.secretWords = o.validator, cs, fns, o.secretWords
+	cfg.evaluation = ev
 	if len(o.factories) > 0 {
 		late, made, err := runFactories(ctx, o.factories, cfg, in)
 		created = append(created, made...)
@@ -218,7 +219,7 @@ func load(ctx context.Context, o *loadOptions) (*Config, []Source, error) {
 			return nil, created, err
 		}
 		cfg = newConfig(append(loaded, late...), profiles)
-		cfg.validator, cfg.converters, cfg.functions, cfg.secretWords = o.validator, cs, fns, o.secretWords
+		cfg.evaluation = ev
 	}
 	if err := cfg.bindMappings(o.mappings); err != nil {
 		return nil, created, err

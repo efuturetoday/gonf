@@ -11,18 +11,37 @@ import (
 // Config is an immutable snapshot of all loaded values. It is safe for
 // concurrent use.
 type Config struct {
+	// Load fills the parts in this order: what the Sources loaded, how
+	// values are evaluated, and what the Mappings made of them.
+	snapshot
+	evaluation
+	binding
+}
+
+// snapshot is what the Sources loaded.
+type snapshot struct {
 	// sources holds the loaded Sources, highest priority first.
 	sources []loadedSource
 	// profiles holds the active profiles, strongest first.
 	profiles []string
 	keys     []string
-	// validator is set with WithValidator, converters with WithConverter,
-	// functions with WithFunctions.
-	validator  func(v any) error
-	converters converters
-	functions  *functions
-	// secretWords are those of WithSecretWords.
+	// warnings are those of the Sources and, after binding, of the
+	// Mappings.
+	warnings []Warning
+}
+
+// evaluation is what expands and converts values: validator is set with
+// WithValidator, converters with WithConverter, functions with
+// WithFunctions, secretWords with WithSecretWords.
+type evaluation struct {
+	validator   func(v any) error
+	converters  converters
+	functions   *functions
 	secretWords []string
+}
+
+// binding is what the Mappings made of the snapshot.
+type binding struct {
 	// mappings holds the bound value of every Mapping given with
 	// WithMappings.
 	mappings map[AnyMapping]boundMapping
@@ -33,9 +52,6 @@ type Config struct {
 	property   map[string]int
 	values     map[string]boundValue
 	read       map[string]struct{}
-	// warnings are those of the Sources and, after binding, of the
-	// Mappings.
-	warnings []Warning
 }
 
 type loadedSource struct {
@@ -64,7 +80,7 @@ func newConfig(loaded []loadedSource, profiles []string) *Config {
 			}
 		}
 	}
-	c := &Config{sources: srcs, profiles: profiles, keys: slices.Sorted(maps.Keys(keys))}
+	c := &Config{snapshot: snapshot{sources: srcs, profiles: profiles, keys: slices.Sorted(maps.Keys(keys))}}
 	for _, s := range srcs {
 		c.warnings = append(c.warnings, s.warnings...)
 	}
@@ -115,7 +131,7 @@ func (c *Config) Candidates(key string) []Value {
 
 // all yields the values for key in priority order: by ordinal, then by
 // profile (strongest first, base last), then by registration (latest first).
-func (c *Config) all(key string) iter.Seq[Value] {
+func (c *snapshot) all(key string) iter.Seq[Value] {
 	return func(yield func(Value) bool) {
 		if strings.HasPrefix(key, "%") {
 			return
@@ -155,7 +171,7 @@ func (c *Config) all(key string) iter.Seq[Value] {
 
 // keyMapper returns the Source of the highest priority that is a
 // KeyMapper, nil if there is none. It names Property.Env only.
-func (c *Config) keyMapper() KeyMapper {
+func (c *snapshot) keyMapper() KeyMapper {
 	if s := c.keyMapperSource(); s != nil {
 		return s.(KeyMapper)
 	}
@@ -164,7 +180,7 @@ func (c *Config) keyMapper() KeyMapper {
 
 // keyMapperSource returns the Source keyMapper returns, nil if there is
 // none.
-func (c *Config) keyMapperSource() Source {
+func (c *snapshot) keyMapperSource() Source {
 	for _, s := range c.sources {
 		if _, ok := s.src.(KeyMapper); ok {
 			return s.src

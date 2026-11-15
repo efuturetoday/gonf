@@ -244,52 +244,27 @@ More programs in [`examples/`](./examples):
 
 ## gonf, viper or koanf?
 
-All three load layered configuration. They differ in what they take care
-of for you.
-
 | | gonf | viper | koanf |
 | --- | --- | --- | --- |
-| Shape | typed structs, checked at start | keys read by name, `Unmarshal` into structs | you assemble providers and parsers |
-| State | no global state | a global instance by default | an instance you create |
-| Keys | case-sensitive | case-insensitive | case-sensitive |
-| Environment | matched against your structs | derived by `AutomaticEnv` and `BindEnv` | `env` provider with a transform callback |
+| Config | typed structs | keys by name, `Unmarshal` | keys by name, `Unmarshal` |
+| Unknown keys | error at start | ignored by default | ignored |
+| Environment | matched against your structs | `AutomaticEnv`, `BindEnv` | provider with a transform |
+| Origin of a value | `cfg.Explain` | no | no |
+| Global state | none | a global instance by default | none |
+| Dependencies | standard library | many | one module per provider |
 
-Choose **gonf** for services that want typed structs checked at start with
-all errors at once, the origin of every value (`cfg.Explain`), profiles,
-secrets, environment variables matched against the structs, and docs and
-a schema generated from the code. Choose **viper** for its large ecosystem
-and remote providers. Choose **koanf** if you want to assemble providers
-and parsers yourself with few opinions.
-
-Coming from viper or koanf:
-
-- A Mapping per struct (`gonf.NewMapping[Config]("app")`) replaces
-  `Unmarshal`. Unknown keys and missing values fail at start.
-- Environment names come from the keys (`app.db.url` is `APP_DB_URL`), so
-  there is nothing to bind or transform.
-- Values may refer to others and call functions: `${app.db.host}`,
-  `${env::HOME}`.
+- **gonf**: typed configuration, checked before the service starts.
+- **viper**: the largest ecosystem, remote providers.
+- **koanf**: providers and parsers assembled by hand.
 
 ## Contributing
 
-Issues and pull requests are welcome. Before sending a change, run:
-
-```sh
-go vet ./...
-go test -race ./...
-golangci-lint run
-```
-
-`format/yaml` and `cmd/gonf` are modules of their own, so that gonf
-depends on the standard library only; run the same commands in their
-directories. `go.work` builds them against the gonf of this repository,
-and all three are released together under one version.
-
-Pull requests are squashed into one commit named by their title, which
-follows [Conventional Commits](https://www.conventionalcommits.org/), such
-as `feat(source): Verbatim` or `fix: profile of a reload`. Releases and the
-[changelog](CHANGELOG.md) are made from these titles. Report
-vulnerabilities as described in [SECURITY.md](SECURITY.md).
+Issues and pull requests are welcome. Run `go vet ./...`,
+`go test -race ./...` and `golangci-lint run`, also in `format/yaml` and
+`cmd/gonf`. Pull request titles follow
+[Conventional Commits](https://www.conventionalcommits.org/); releases and
+the [changelog](CHANGELOG.md) are made from them. Report vulnerabilities as
+described in [SECURITY.md](SECURITY.md).
 
 ## License
 

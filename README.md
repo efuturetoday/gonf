@@ -6,26 +6,24 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/efuturetoday/gonf.svg)](https://pkg.go.dev/github.com/efuturetoday/gonf) [![Build Status](https://img.shields.io/github/actions/workflow/status/efuturetoday/gonf/test.yml?branch=main)](https://github.com/efuturetoday/gonf/actions) [![Go Version](https://img.shields.io/github/go-mod/go-version/efuturetoday/gonf)](https://go.dev/) [![License](https://img.shields.io/github/license/efuturetoday/gonf)](./LICENSE)
 
-gonf is configuration for Go services. You describe your settings in a
-struct, and gonf fills it from files, `.env`, the environment and flags,
-and checks everything when the program starts.
+gonf fills your Go structs from files, environment and flags, and
+checks them before your service starts.
 
-## Features
-
-- **All mistakes at start, at once**, with the file and line and a
-  suggestion ("did you mean ...?").
-- **See where a value comes from**: which file and line, or which
-  environment variable, and what it replaced.
-- **Environment variables just work**: `APP_DB_URL` sets `app.db.url`. A
-  typo such as `APP_DB_PROT` gives a warning instead of being ignored.
-- **Profiles** for dev, test and prod.
-- **Secrets that never print**: they show as `****` in logs and output.
-- **Values that build on each other**: `postgres://${app.db.host}/app`,
-  or `${env::HOME}` to call a function.
-- **Reference docs and an editor schema** generated from your structs, so
-  they cannot drift.
-- **Safe live reload**: a broken change keeps the running configuration.
-- **Standard library only.**
+- **Typed structs**: no string lookups, no casts
+- **Fail fast**: every error at start, with file and line
+- **Layering**: defaults, files, `.env`, env and flags, each one on top
+- **Any profiles**: `dev`, `staging`, `local`, combined
+- **Explain**: see where each value came from
+- **Env without binding**: `APP_DB_URL` sets `app.db.url`, typos warned
+- **Formats**: properties, JSON, YAML, `.env`
+- **Sources**: files, env, flags, secret mounts, your own
+- **No secret logging**: `****` in logs, errors and docs
+- **Expressions**: `${app.db.host}`, `${file::/run/secrets/db}`
+- **Safe reload**: a broken change never goes live
+- **Generated docs**: key reference and JSON Schema
+- **Extensible**: own sources, formats and functions
+- **Library modules**: packages bring their own config
+- **Zero dependencies**: core is standard library only
 
 ## Getting started
 
@@ -282,8 +280,10 @@ go test -race ./...
 golangci-lint run
 ```
 
-`format/yaml` and `cmd/gonf` are modules of their own; run the same
-commands in their directories.
+`format/yaml` and `cmd/gonf` are modules of their own, so that gonf
+depends on the standard library only; run the same commands in their
+directories. `go.work` builds them against the gonf of this repository,
+and all three are released together under one version.
 
 Pull requests are squashed into one commit named by their title, which
 follows [Conventional Commits](https://www.conventionalcommits.org/), such

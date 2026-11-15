@@ -2,7 +2,7 @@ name: release
 
 # release-please keeps a pull request with the next version and its
 # changelog, from the Conventional Commits on main; merging it tags the
-# release.
+# release. All modules of the repository share that version.
 on:
   push:
     branches: [main]
@@ -20,6 +20,28 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-      # The module proxy fetches the new version, so pkg.go.dev shows it.
+      # format/yaml and cmd/gonf are modules of their own; Go finds their
+      # versions by tags with their path. They get the version of gonf, on
+      # the same commit.
       - if: steps.release.outputs.release_created
-        run: curl -fsS "https://proxy.golang.org/github.com/efuturetoday/gonf/@v/${{ steps.release.outputs.tag_name }}.info"
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.release.outputs.sha }}
+      - if: steps.release.outputs.release_created
+        env:
+          TAG: ${{ steps.release.outputs.tag_name }}
+          SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          for module in format/yaml cmd/gonf; do
+            git tag "$module/$TAG" "$SHA"
+            git push origin "$module/$TAG"
+          done
+      # The module proxy fetches the new versions, so pkg.go.dev shows them.
+      - if: steps.release.outputs.release_created
+        env:
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: |
+          for module in "" /format/yaml /cmd/gonf; do
+            curl -fsS "https://proxy.golang.org/github.com/efuturetoday/gonf$module/@v/$TAG.info"
+            echo
+          done

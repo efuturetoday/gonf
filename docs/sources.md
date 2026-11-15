@@ -263,6 +263,12 @@ a default replaces it. `Mapping` declares the keys the Function reads, such
 as the key of `aes-gcm`, so they are documented and the environment can set
 them.
 
+Functions run with the rights of the process: `file` reads any file it
+may open, `env` any variable, `git` runs a command. Every Source is
+therefore trusted like the code. A Source with values from somewhere else,
+such as a key store others write to, should not offer them as expressions;
+it returns them escaped with `gonf.Escape`, so `${` stays literal.
+
 `cfg.Eval` evaluates an expression without a key, for example
 `cfg.Eval("${env::HOME}/logs")`. Like `cfg.Get`, it is for a value read on
 purpose; the configuration of an application goes through Mappings (see
@@ -306,6 +312,17 @@ methods of an interface or none of it:
 
 `source.New` and `source.Meta` already implement the common ones for
 Sources with a document.
+
+`source/sourcetest` checks that a Source keeps this contract: a scheme in
+the name, the expected values from `Load` (or `LoadMapped`), the same
+values a second time, valid profile keys, and a `Watch` that ends with its
+context. Run it in the tests of the Source:
+
+```go
+func TestContract(t *testing.T) {
+	sourcetest.Run(t, newVaultSource(addr), map[string]string{"db.url": "postgres://db"})
+}
+```
 
 A Source that needs configuration itself, such as a Vault Source whose
 address is in `app.properties`, is created by a factory. The factory brings

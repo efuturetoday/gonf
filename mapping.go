@@ -130,7 +130,8 @@ func (m *Mapping[T]) Prefix() string { return m.prefix }
 // maps are copies, so a caller may modify them without changing what other
 // callers get; a type without them costs no copy. Values of types with a
 // converter or UnmarshalText, such as *url.URL, are not copied and must
-// not be modified.
+// not be modified. The copy is made on every call: read a Mapping once
+// where it is used, not in a hot path.
 //
 // Get panics if m was not passed to Load with WithMappings: that is a
 // programming error, while every configuration error is reported by Load.

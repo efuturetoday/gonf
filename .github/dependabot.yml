@@ -2,6 +2,9 @@ version: 2
 updates:
   - package-ecosystem: gomod
     directories: ["/", "/format/yaml", "/cmd/gonf"]
+    # release-please sets the version of gonf in format/yaml and cmd/gonf.
+    ignore:
+      - dependency-name: github.com/efuturetoday/gonf
     schedule:
       interval: weekly
     commit-message:

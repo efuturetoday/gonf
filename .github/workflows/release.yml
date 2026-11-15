@@ -20,9 +20,9 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-      # format/yaml and cmd/gonf are modules of their own; Go finds their
-      # versions by tags with their path. They get the version of gonf, on
-      # the same commit.
+      # Every go.mod below the root is a module of its own, such as
+      # format/yaml; Go finds its versions by tags with its path. It gets
+      # the version of gonf, on the same commit.
       - if: steps.release.outputs.release_created
         uses: actions/checkout@v7
         with:
@@ -32,7 +32,7 @@ jobs:
           TAG: ${{ steps.release.outputs.tag_name }}
           SHA: ${{ steps.release.outputs.sha }}
         run: |
-          for module in format/yaml cmd/gonf; do
+          for module in $(git ls-files '*/go.mod' | xargs -n1 dirname); do
             git tag "$module/$TAG" "$SHA"
             git push origin "$module/$TAG"
           done
@@ -41,7 +41,7 @@ jobs:
         env:
           TAG: ${{ steps.release.outputs.tag_name }}
         run: |
-          for module in "" /format/yaml /cmd/gonf; do
+          for module in "" $(git ls-files '*/go.mod' | xargs -n1 dirname | sed 's|^|/|'); do
             curl -fsS "https://proxy.golang.org/github.com/efuturetoday/gonf$module/@v/$TAG.info"
             echo
           done

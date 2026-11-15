@@ -27,16 +27,31 @@ jobs:
           go-version-file: ${{ matrix.go.file }}
       - run: go vet ./...
       - run: go test -race ./...
-      # format/yaml and cmd/gonf are modules of their own.
-      - run: go vet ./... && go test -race ./...
-        working-directory: format/yaml
-      - run: go vet ./... && go test -race ./...
-        working-directory: cmd/gonf
+      # Every go.mod below the root is a module of its own.
+      - name: Test the other modules
+        run: |
+          set -eu
+          for module in $(git ls-files '*/go.mod' | xargs -n1 dirname); do
+            (cd "$module" && go vet ./... && go test -race ./...)
+          done
 
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # A module of its own is released with gonf and linted here.
+      - name: Every module is released and linted
+        run: |
+          set -eu
+          for mod in $(git ls-files '*/go.mod'); do
+            module=$(dirname "$mod")
+            grep -q "\"path\": \"$mod\"" release-please-config.json ||
+              { echo "::error file=$mod::$mod is missing in extra-files of release-please-config.json"; exit 1; }
+            grep -q 'github.com/efuturetoday/gonf v.* // x-release-please-version' "$mod" ||
+              { echo "::error file=$mod::$mod must require gonf with // x-release-please-version"; exit 1; }
+            grep -q "working-directory: $module$" .github/workflows/test.yml ||
+              { echo "::error file=.github/workflows/test.yml::no lint step for $module"; exit 1; }
+          done
       - uses: actions/setup-go@v7
         with:
           go-version: stable

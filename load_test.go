@@ -702,3 +702,42 @@ func TestSourceError(t *testing.T) {
 		t.Error("errors.Is does not reach the wrapped error")
 	}
 }
+
+// A verbatim Source gives its values as written: they call no Function and
+// refer to no key, also when another key refers to them.
+func TestLoad_Verbatim(t *testing.T) {
+	t.Parallel()
+	called := false
+	spy := gonf.Function{Name: "spy", Call: func(*gonf.Config, string, gonf.Origin) (string, error) {
+		called = true
+		return "read", nil
+	}}
+	cfg, err := gonf.Load(context.Background(),
+		gonf.WithSources(
+			memory.New(map[string]string{"host": "db", "url": "postgres://${host}"}),
+			memory.New(map[string]string{"hook": "https://x/?t=${spy::token}", "note": "${host} $${x}"},
+				source.Verbatim(), source.WithName("memory:shared"), source.WithOrdinal(600)),
+			memory.New(map[string]string{"copy": "${hook}"}, source.WithName("memory:copy")),
+		),
+		gonf.WithFunctions(spy),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, expected := range map[string]string{
+		"hook": "https://x/?t=${spy::token}",
+		"note": "${host} $${x}",
+		"copy": "https://x/?t=${spy::token}",
+		"url":  "postgres://db",
+	} {
+		if got, err := cfg.Get(key); err != nil || got != expected {
+			t.Errorf("Get(%q) = %q, %v, want %q", key, got, err, expected)
+		}
+	}
+	if called {
+		t.Error("a verbatim value called a Function")
+	}
+	if v, _ := cfg.Lookup("hook"); v.Raw != "https://x/?t=$${spy::token}" {
+		t.Errorf("Lookup(hook).Raw = %q, want it escaped", v.Raw)
+	}
+}

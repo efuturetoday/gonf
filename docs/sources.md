@@ -61,6 +61,7 @@ Options for these Sources:
 | `source.WithName(name)` | another name, starting with a scheme such as `file:` |
 | `source.Optional()` | a missing file yields no values instead of an error |
 | `source.WithProfile("dev")` | every key belongs to the profile `dev` |
+| `source.Verbatim()` | values are text, never expressions; for values others may write |
 | `source.WithKeyMatcher(env.Match)` | keys are written like environment variables, as in `.env` |
 | `source.WithTrigger(source.Every(5*time.Second))` | while `gonf.Watch` watches, check for changes every 5 s instead of every 2 s |
 
@@ -265,9 +266,11 @@ them.
 
 Functions run with the rights of the process: `file` reads any file it
 may open, `env` any variable, `git` runs a command. Every Source is
-therefore trusted like the code. A Source with values from somewhere else,
-such as a key store others write to, should not offer them as expressions;
-it returns them escaped with `gonf.Escape`, so `${` stays literal.
+therefore trusted like the code. Values others may write, such as those of
+a shared key store, come from a Source made `source.Verbatim()`: its values
+are text, `${` in them stays as written and calls nothing, also when another
+key refers to them. A Source of its own does the same by implementing
+`gonf.VerbatimSource`.
 
 `cfg.Eval` evaluates an expression without a key, for example
 `cfg.Eval("${env::HOME}/logs")`. Like `cfg.Get`, it is for a value read on
@@ -307,6 +310,7 @@ methods of an interface or none of it:
 | `gonf.KeyMapper` (`MapKey`) | has its own naming scheme; `Describe` and `Explain` show it, e.g. as the variable of a key |
 | `gonf.OptionalSource` | may have nothing to read, such as a missing file; `Config.Sources` shows it |
 | `gonf.ProfileSource` | holds only the keys of one profile |
+| `gonf.VerbatimSource` (`IsVerbatim`) | has values that are text, never expressions, such as values others may write |
 | `gonf.Watcher` (`Watch`) | notices changes itself, see [Reloading](reload.md) |
 | `io.Closer` | needs closing; gonf closes the Sources a factory creates, never those passed with `WithSources` |
 

@@ -379,15 +379,20 @@ func loadValues(ctx context.Context, src Source, in loadInput) (map[string]Value
 	return values, nil, err
 }
 
-// newLoadedSource validates the profile keys of values and fills in the
-// Origin of every value.
+// newLoadedSource validates the profile keys of values, escapes the values
+// of a VerbatimSource and fills in the Origin of every value.
 func newLoadedSource(src Source, values map[string]Value) (loadedSource, error) {
 	s := loadedSource{src: src, ordinal: src.Ordinal(), values: make(map[string]Value, len(values))}
+	vs, isVerbatim := src.(VerbatimSource)
+	isVerbatim = isVerbatim && vs.IsVerbatim()
 	for key, v := range values {
 		if strings.HasPrefix(key, "%") {
 			if _, _, err := splitProfileKey(key); err != nil {
 				return loadedSource{}, err
 			}
+		}
+		if isVerbatim {
+			v.Raw = Escape(v.Raw)
 		}
 		v.Origin.Source = src.Name()
 		v.Origin.Ordinal = s.ordinal

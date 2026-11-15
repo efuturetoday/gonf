@@ -69,6 +69,15 @@ type KeyMapper interface {
 	MapKey(key string) string
 }
 
+// VerbatimSource is implemented by Sources whose values are text, never
+// expressions, such as values others may write. If IsVerbatim reports true,
+// Load escapes every value (see Escape), so ${file::...} or ${env::...} in
+// it stays as written and calls no Function. Lookup and Explain show the
+// escaped value, Get the value as the Source delivered it.
+type VerbatimSource interface {
+	IsVerbatim() bool
+}
+
 // Scheme returns the scheme of a Source name, the part before the first
 // ':', and whether name has a valid scheme. A valid scheme has at least two
 // characters, starts with a letter and contains only letters, digits, '+',

@@ -26,6 +26,14 @@ func Optional() Option {
 	return func(m *Meta) { m.isOptional = true }
 }
 
+// Verbatim makes every value of the Source text: ${...} in it is never
+// expanded, so it reads no file, no variable and calls no Function. Use it
+// for Sources whose values others may write, such as a shared key store.
+// See gonf.VerbatimSource.
+func Verbatim() Option {
+	return func(m *Meta) { m.isVerbatim = true }
+}
+
 // WithProfile makes every key of a document Source (New and providers built
 // on it) belong to profile, as if written "%profile.key". Use it for
 // profile files such as app-dev.properties. A key with a profile of its
@@ -85,13 +93,14 @@ func (s *Setting[T]) Get(m Meta) (T, bool) {
 	return v, ok
 }
 
-// Meta holds the name, ordinal, optionality and profile of a Source. Providers embed
+// Meta holds the name, ordinal, optionality, verbatim and profile of a Source. Providers embed
 // it to implement the Name and Ordinal methods of gonf.Source and to support
 // the common Options.
 type Meta struct {
 	name       string
 	ordinal    int
 	isOptional bool
+	isVerbatim bool
 	profile    string
 	match      KeyMatcher
 	trigger    Trigger
@@ -115,6 +124,9 @@ func (m Meta) Ordinal() int { return m.ordinal }
 
 // IsOptional reports whether Optional was given.
 func (m Meta) IsOptional() bool { return m.isOptional }
+
+// IsVerbatim reports whether Verbatim was given.
+func (m Meta) IsVerbatim() bool { return m.isVerbatim }
 
 // Profile returns the profile given with WithProfile, or "".
 func (m Meta) Profile() string { return m.profile }

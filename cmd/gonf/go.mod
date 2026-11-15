@@ -3,7 +3,7 @@ module github.com/efuturetoday/gonf/cmd/gonf
 go 1.26.0
 
 require (
-	github.com/efuturetoday/gonf v0.1.1 // x-release-please-version
+	github.com/efuturetoday/gonf v0.1.2 // x-release-please-version
 	golang.org/x/term v0.46.0
 )
 

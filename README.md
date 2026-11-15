@@ -285,6 +285,12 @@ golangci-lint run
 `format/yaml` and `cmd/gonf` are modules of their own; run the same
 commands in their directories.
 
+Pull requests are squashed into one commit named by their title, which
+follows [Conventional Commits](https://www.conventionalcommits.org/), such
+as `feat(source): Verbatim` or `fix: profile of a reload`. Releases and the
+[changelog](CHANGELOG.md) are made from these titles. Report
+vulnerabilities as described in [SECURITY.md](SECURITY.md).
+
 ## License
 
 [Apache License 2.0](./LICENSE)

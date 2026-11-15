@@ -1,8 +1,9 @@
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
 
-# Local Claude Code settings (per machine)
-/.claude/settings.local.json
+# Agent skills of the maintainers, installed from skills-lock.json.
+/.agents/
+/.claude/
 
 # Binary of go build ./cmd/gonf
 /cmd/gonf/gonf

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/efuturetoday/gonf/compare/v0.1.2...v0.2.0) (2026-11-16)
+
+
+### Features
+
+* secret tag for plain fields ([c4124ff](https://github.com/efuturetoday/gonf/commit/c4124ff723f4397ddb8f0bd3652b2547170b11ed))
+
+
+### Bug Fixes
+
+* unknown keys in entries of maps and lists ([45f8859](https://github.com/efuturetoday/gonf/commit/45f88590ae95941577b1164ac6069293a6af3223))
+
 ## [0.1.2](https://github.com/efuturetoday/gonf/compare/v0.1.1...v0.1.2) (2026-11-15)
 
 

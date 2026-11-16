@@ -28,6 +28,19 @@ db.pin: invalid int, value hidden (from env:DB_PIN)
 A `Secret` field is required like any other; use `*gonf.Secret[T]` for an
 optional one. In tests, create one with `gonf.NewSecret("s3cret")`.
 
+A type that must not depend on gonf, such as one of a domain shared with
+other code, marks a plain field with the tag `secret:"true"` instead. The
+field takes secrets, such as `${file::...}` or a reference to a secret
+key, and `Explain` and `Describe` mask it; but the value itself is a plain
+string and prints as it is, so the type takes care of its output:
+
+```go
+type Login struct {
+	User     string
+	Password string `secret:"true"`
+}
+```
+
 ## What gets masked
 
 `cfg.Explain`, `cfg.Explanations` and `gonf.Describe` replace secret values

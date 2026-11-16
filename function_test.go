@@ -182,6 +182,21 @@ func TestWithFunctions_Bind(t *testing.T) {
 	if got.Password.Value() != "S3CRET" || got.User.Value() != "ADMIN" || got.Cert.Value() != "UEVN" {
 		t.Errorf("got %q, %q, %q; want S3CRET, ADMIN, UEVN", got.Password.Value(), got.User.Value(), got.Cert.Value())
 	}
+
+	// A secret tag makes a plain field take secrets too, for types that
+	// must not know gonf.
+	type tagged struct {
+		Password string `secret:"true"`
+		User     string `default:"${upper::admin}" secret:"true"`
+		Cert     string `secret:"true"`
+	}
+	plain, err := bind[tagged](load(t, values, nil, opts...), "db", gonf.AllowUnknown())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.Password != "S3CRET" || plain.User != "ADMIN" || plain.Cert != "UEVN" {
+		t.Errorf("tagged: %+v", plain)
+	}
 }
 
 func TestWithFunctions_Explain(t *testing.T) {

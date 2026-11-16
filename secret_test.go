@@ -199,3 +199,43 @@ func TestWithSecretWords(t *testing.T) {
 		})
 	}
 }
+
+// A secret tag makes a plain field take a secret and masks it, like a
+// Secret, but for keys that do not sound secret; a field without it still
+// refuses the secret.
+func TestBind_SecretTag(t *testing.T) {
+	t.Parallel()
+	type login struct {
+		Key   string `secret:"true"`
+		Cert  string `secret:"true" default:"pem"`
+		Plain string `default:""`
+	}
+	values := map[string]string{"api.password": "s3cret", "api.key": "${api.password}"}
+	m := gonf.NewMapping[login]("api")
+	cfg := load(t, values, nil, gonf.WithMappings(m))
+	if got := m.Get(cfg); got.Key != "s3cret" || got.Cert != "pem" {
+		t.Errorf("Get = %+v", got)
+	}
+	if got, expected := cfg.Explain("api.key").String(), "api.key = **** (file:app.properties)"; got != expected {
+		t.Errorf("Explain = %q, want %q", got, expected)
+	}
+
+	props, err := gonf.Describe(gonf.WithMappings(gonf.NewMapping[login]("api")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range props {
+		if want := p.Key != "api.plain"; p.Secret != want {
+			t.Errorf("%s: Secret %v, want %v", p.Key, p.Secret, want)
+		}
+		if p.Key == "api.cert" && strings.Contains(fmt.Sprint(p.Default), "pem") {
+			t.Errorf("api.cert shows its default %v", p.Default)
+		}
+	}
+
+	values["api.plain"] = "${api.password}"
+	_, err = bind[login](load(t, values, nil), "api")
+	if err == nil || !strings.Contains(err.Error(), "api.plain: refers to the secret api.password") {
+		t.Errorf("plain field: %v", err)
+	}
+}

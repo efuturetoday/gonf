@@ -151,7 +151,7 @@ func propertyOf(key string, f field, m AnyMapping, secretWords []string) Propert
 		opt(&o)
 	}
 	p.IsUnknownAllowed = o.isUnknownAllowed
-	p.Secret = f.m.isSecret || isSecretName(key, secretWords)
+	p.Secret = f.m.isSecret || f.isSecret || isSecretName(key, secretWords)
 	if f.def != nil {
 		def := *f.def
 		if p.Secret && def != "" {

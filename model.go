@@ -60,6 +60,9 @@ type field struct {
 	// default for a group.
 	err        error
 	isRequired bool
+	// isSecret reports a secret tag: the field holds a secret, as a
+	// Secret does, without being one.
+	isSecret bool
 }
 
 // isRequired reports whether Load fails without a value for a key of model
@@ -202,7 +205,7 @@ func (mb *modeler) fields(t reflect.Type) []field {
 		if name == "" {
 			name = kebab(f.Name)
 		}
-		sf := field{name: name, index: []int{i}, desc: f.Tag.Get("desc"), m: mb.build(f.Type)}
+		sf := field{name: name, index: []int{i}, desc: f.Tag.Get("desc"), m: mb.build(f.Type), isSecret: f.Tag.Get("secret") == "true"}
 		if def, ok := f.Tag.Lookup("default"); ok {
 			sf.def = &def
 		}

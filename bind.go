@@ -242,7 +242,7 @@ func (b *binder) value(key string) (string, Origin, bool, error) {
 // valid model.
 func (b *binder) bind(key, property string, f field, v reflect.Value) {
 	b.known[key] = struct{}{}
-	if f.m.isSecret {
+	if f.m.isSecret || f.isSecret {
 		b.secrets[key] = struct{}{}
 	}
 	if f.m.kind == kindScalar || f.m.kind == kindList && f.m.elem.kind == kindScalar {
